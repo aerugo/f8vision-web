@@ -209,6 +209,8 @@ class AncestralWebApp {
   private peoplePanel: HTMLElement | null = null;
   private peopleList: HTMLElement | null = null;
   private selectedSearchIndex: number = -1;
+  // Focused person state: the person whose info is "locked" in place
+  private focusedPerson: Person | null = null;
 
   constructor() {
     this.init();
@@ -498,9 +500,10 @@ class AncestralWebApp {
     // Fly to the node
     this.renderer.flyToNode(personId);
 
-    // Update info panel
+    // Set focused person and update info panel
     const node = this.graph.nodes.get(personId);
     if (node) {
+      this.focusedPerson = node.person;
       this.updateInfoPanel(node.person);
     }
   }
@@ -569,13 +572,20 @@ class AncestralWebApp {
       // Create renderer
       this.renderer = new AncestralWebRenderer(this.container, DEFAULT_CONFIG);
 
-      // Setup hover callback
+      // Setup hover callback - show temporary info while hovering, return to focused person when done
       this.renderer.onHover((person, _screenPos) => {
-        this.updateInfoPanel(person);
+        if (person) {
+          // Hovering over someone - show their info temporarily
+          this.updateInfoPanel(person);
+        } else {
+          // Hover ended - return to focused person (or hide if none focused)
+          this.updateInfoPanel(this.focusedPerson);
+        }
       });
 
-      // Setup click callback to keep info panel open when clicking an orb
+      // Setup click callback - lock the person info in place
       this.renderer.onClick((person) => {
+        this.focusedPerson = person;
         this.updateInfoPanel(person);
       });
 
