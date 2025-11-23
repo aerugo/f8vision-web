@@ -15,6 +15,24 @@ export interface HoverCallback {
   (person: Person | null, screenPos: { x: number; y: number } | null): void;
 }
 
+export interface ClickCallback {
+  (person: Person | null): void;
+}
+
+interface CameraAnimation {
+  startPosition: THREE.Vector3;
+  endPosition: THREE.Vector3;
+  startTarget: THREE.Vector3;
+  endTarget: THREE.Vector3;
+  startTime: number;
+  duration: number;
+  onComplete?: () => void;
+}
+
+// Easing function for smooth animations
+const easeInOutCubic = (t: number): number =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
 /**
  * Main 3D renderer for the Ancestral Web visualization
  * Uses Three.js with custom shaders for ethereal bioluminescent effects
@@ -40,9 +58,11 @@ export class AncestralWebRenderer {
   private mouse: THREE.Vector2;
   private hoveredNode: GraphNode | null = null;
   private onHoverCallback: HoverCallback | null = null;
+  private onClickCallback: ClickCallback | null = null;
 
   private clock: THREE.Clock;
   private animationId: number = 0;
+  private cameraAnimation: CameraAnimation | null = null;
 
   constructor(container: HTMLElement, config: Partial<EngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -103,6 +123,34 @@ export class AncestralWebRenderer {
       const rect = container.getBoundingClientRect();
       this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    });
+
+    // Click to select and zoom to node
+    container.addEventListener('click', (event) => {
+      // Ignore if we're dragging (OrbitControls)
+      if (this.controls.enableRotate === false) return;
+
+      const rect = container.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      this.raycaster.setFromCamera(mouse, this.camera);
+
+      if (this.nodeInstancedMesh) {
+        const intersects = this.raycaster.intersectObject(this.nodeInstancedMesh);
+        if (intersects.length > 0) {
+          const instanceId = intersects[0].instanceId;
+          if (instanceId !== undefined && instanceId < this.nodeData.length) {
+            const node = this.nodeData[instanceId];
+            this.flyToNode(node.id);
+            if (this.onClickCallback) {
+              this.onClickCallback(node.person);
+            }
+          }
+        }
+      }
     });
   }
 
@@ -437,6 +485,13 @@ export class AncestralWebRenderer {
   }
 
   /**
+   * Set click callback
+   */
+  onClick(callback: ClickCallback): void {
+    this.onClickCallback = callback;
+  }
+
+  /**
    * Check for hover intersections with instanced mesh
    */
   private updateHover(): void {
@@ -511,6 +566,9 @@ export class AncestralWebRenderer {
         material.uniforms.uTime.value = time;
       }
 
+      // Update camera animation (smooth fly-to)
+      this.updateCameraAnimation();
+
       // Update hover
       this.updateHover();
 
@@ -563,7 +621,43 @@ export class AncestralWebRenderer {
   }
 
   /**
-   * Focus camera on a specific node
+   * Update camera animation
+   */
+  private updateCameraAnimation(): void {
+    if (!this.cameraAnimation) return;
+
+    const elapsed = this.clock.getElapsedTime() * 1000; // Convert to ms
+    const anim = this.cameraAnimation;
+    const progress = Math.min((elapsed - anim.startTime) / anim.duration, 1);
+
+    // Use easeInOutCubic for smooth flight
+    const easedProgress = easeInOutCubic(progress);
+
+    // Interpolate camera position
+    this.camera.position.lerpVectors(
+      anim.startPosition,
+      anim.endPosition,
+      easedProgress
+    );
+
+    // Interpolate orbit target
+    this.controls.target.lerpVectors(
+      anim.startTarget,
+      anim.endTarget,
+      easedProgress
+    );
+
+    // Animation complete
+    if (progress >= 1) {
+      if (anim.onComplete) {
+        anim.onComplete();
+      }
+      this.cameraAnimation = null;
+    }
+  }
+
+  /**
+   * Focus camera on a specific node (instant, no animation)
    */
   focusOnNode(nodeId: string): void {
     const node = this.nodeData.find(n => n.id === nodeId);
@@ -580,5 +674,64 @@ export class AncestralWebRenderer {
         target.z + 50
       );
     }
+  }
+
+  /**
+   * Fly camera smoothly to a specific node
+   */
+  flyToNode(nodeId: string, duration: number = 1200, onComplete?: () => void): void {
+    const node = this.nodeData.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const targetPoint = new THREE.Vector3(
+      node.position.x,
+      node.position.y,
+      node.position.z
+    );
+
+    // Calculate camera end position - orbit around the target
+    // Consider current camera direction to make a smooth arc
+    const currentDirection = new THREE.Vector3()
+      .subVectors(this.camera.position, this.controls.target)
+      .normalize();
+
+    // Ideal viewing distance based on node importance
+    const viewDistance = 40 + node.biographyWeight * 20;
+
+    // Position camera with some offset for better view
+    const endPosition = new THREE.Vector3(
+      targetPoint.x + currentDirection.x * viewDistance,
+      targetPoint.y + Math.max(currentDirection.y * viewDistance, viewDistance * 0.3),
+      targetPoint.z + currentDirection.z * viewDistance
+    );
+
+    // Start animation
+    this.cameraAnimation = {
+      startPosition: this.camera.position.clone(),
+      endPosition: endPosition,
+      startTarget: this.controls.target.clone(),
+      endTarget: targetPoint,
+      startTime: this.clock.getElapsedTime() * 1000,
+      duration: duration,
+      onComplete: onComplete,
+    };
+  }
+
+  /**
+   * Get all nodes data for external search
+   */
+  getNodeData(): GraphNode[] {
+    return this.nodeData;
+  }
+
+  /**
+   * Search nodes by name (case-insensitive)
+   */
+  searchNodes(query: string): GraphNode[] {
+    if (!query.trim()) return [];
+    const lowerQuery = query.toLowerCase();
+    return this.nodeData.filter(node =>
+      node.person.name.toLowerCase().includes(lowerQuery)
+    );
   }
 }

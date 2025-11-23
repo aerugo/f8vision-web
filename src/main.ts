@@ -203,18 +203,306 @@ class AncestralWebApp {
   private renderer: AncestralWebRenderer | null = null;
   private graph: FamilyGraph | null = null;
   private container: HTMLElement | null = null;
+  private searchInput: HTMLInputElement | null = null;
+  private searchResults: HTMLElement | null = null;
+  private searchClear: HTMLElement | null = null;
+  private peoplePanel: HTMLElement | null = null;
+  private peopleList: HTMLElement | null = null;
+  private selectedSearchIndex: number = -1;
 
   constructor() {
     this.init();
     this.setupKeyboardControls();
+    this.setupSearch();
+    this.setupPeoplePanel();
   }
 
   private setupKeyboardControls(): void {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'r' || e.key === 'R') {
+        // Don't reset if typing in search
+        if (document.activeElement === this.searchInput) return;
         this.resetView();
       }
+      // Cmd/Ctrl+K to focus search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        this.searchInput?.focus();
+      }
     });
+  }
+
+  private setupSearch(): void {
+    this.searchInput = document.getElementById('search-input') as HTMLInputElement;
+    this.searchResults = document.getElementById('search-results');
+    this.searchClear = document.getElementById('search-clear');
+
+    if (!this.searchInput || !this.searchResults || !this.searchClear) return;
+
+    // Debounced search
+    let debounceTimeout: ReturnType<typeof setTimeout>;
+    this.searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(() => {
+        this.performSearch();
+      }, 150);
+    });
+
+    // Clear button
+    this.searchClear.addEventListener('click', () => {
+      if (this.searchInput) {
+        this.searchInput.value = '';
+        this.searchInput.focus();
+      }
+      this.clearSearchResults();
+    });
+
+    // Keyboard navigation in search results
+    this.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.navigateSearchResults(1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.navigateSearchResults(-1);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        this.selectCurrentSearchResult();
+      } else if (e.key === 'Escape') {
+        this.searchInput?.blur();
+        this.clearSearchResults();
+      }
+    });
+
+    // Close results when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!this.searchInput?.contains(e.target as Node) &&
+          !this.searchResults?.contains(e.target as Node)) {
+        this.hideSearchResults();
+      }
+    });
+
+    // Show results on focus if there's input
+    this.searchInput.addEventListener('focus', () => {
+      if (this.searchInput?.value.trim()) {
+        this.performSearch();
+      }
+    });
+  }
+
+  private performSearch(): void {
+    if (!this.searchInput || !this.searchResults || !this.renderer) return;
+
+    const query = this.searchInput.value.trim();
+
+    // Update clear button visibility
+    if (this.searchClear) {
+      this.searchClear.classList.toggle('visible', query.length > 0);
+    }
+
+    if (!query) {
+      this.clearSearchResults();
+      return;
+    }
+
+    const results = this.renderer.searchNodes(query);
+    this.selectedSearchIndex = -1;
+    this.renderSearchResults(results, query);
+  }
+
+  private renderSearchResults(results: import('./types').GraphNode[], query: string): void {
+    if (!this.searchResults) return;
+
+    if (results.length === 0) {
+      this.searchResults.innerHTML = `<div id="no-results">No matches found</div>`;
+      this.searchResults.classList.add('visible');
+      return;
+    }
+
+    const highlightMatch = (text: string, query: string): string => {
+      const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      return text.replace(regex, '<span class="search-result-highlight">$1</span>');
+    };
+
+    let html = `<div id="search-count">${results.length} ${results.length === 1 ? 'person' : 'people'} found</div>`;
+
+    results.slice(0, 20).forEach((node, index) => {
+      const person = node.person;
+      const dates = person.birthDate
+        ? `${person.birthDate}${person.deathDate ? ' — ' + person.deathDate : ' — present'}`
+        : '';
+
+      html += `
+        <div class="search-result-item" data-person-id="${person.id}" data-index="${index}">
+          <div class="search-result-name">${highlightMatch(person.name, query)}</div>
+          ${dates ? `<div class="search-result-dates">${dates}</div>` : ''}
+        </div>
+      `;
+    });
+
+    if (results.length > 20) {
+      html += `<div id="search-count" style="border-top: 1px solid rgba(100, 180, 255, 0.15); border-bottom: none;">
+        +${results.length - 20} more results
+      </div>`;
+    }
+
+    this.searchResults.innerHTML = html;
+    this.searchResults.classList.add('visible');
+
+    // Add click handlers to results
+    this.searchResults.querySelectorAll('.search-result-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const personId = item.getAttribute('data-person-id');
+        if (personId) {
+          this.flyToPerson(personId);
+          this.hideSearchResults();
+        }
+      });
+    });
+  }
+
+  private navigateSearchResults(direction: number): void {
+    if (!this.searchResults) return;
+
+    const items = this.searchResults.querySelectorAll('.search-result-item');
+    if (items.length === 0) return;
+
+    // Remove previous selection
+    items.forEach(item => item.classList.remove('selected'));
+
+    // Update index
+    this.selectedSearchIndex += direction;
+    if (this.selectedSearchIndex < 0) this.selectedSearchIndex = items.length - 1;
+    if (this.selectedSearchIndex >= items.length) this.selectedSearchIndex = 0;
+
+    // Apply new selection
+    const selected = items[this.selectedSearchIndex];
+    selected.classList.add('selected');
+    selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  private selectCurrentSearchResult(): void {
+    if (!this.searchResults || this.selectedSearchIndex < 0) return;
+
+    const items = this.searchResults.querySelectorAll('.search-result-item');
+    if (this.selectedSearchIndex >= items.length) return;
+
+    const personId = items[this.selectedSearchIndex].getAttribute('data-person-id');
+    if (personId) {
+      this.flyToPerson(personId);
+      this.hideSearchResults();
+    }
+  }
+
+  private clearSearchResults(): void {
+    if (this.searchResults) {
+      this.searchResults.innerHTML = '';
+      this.searchResults.classList.remove('visible');
+    }
+    if (this.searchClear) {
+      this.searchClear.classList.remove('visible');
+    }
+    this.selectedSearchIndex = -1;
+  }
+
+  private hideSearchResults(): void {
+    if (this.searchResults) {
+      this.searchResults.classList.remove('visible');
+    }
+    this.selectedSearchIndex = -1;
+  }
+
+  private setupPeoplePanel(): void {
+    const toggle = document.getElementById('people-toggle');
+    this.peoplePanel = document.getElementById('people-panel');
+    this.peopleList = document.getElementById('people-list');
+    const closeBtn = document.getElementById('people-panel-close');
+
+    if (toggle && this.peoplePanel) {
+      toggle.addEventListener('click', () => {
+        this.peoplePanel?.classList.toggle('visible');
+        if (this.peoplePanel?.classList.contains('visible')) {
+          this.populatePeopleList();
+        }
+      });
+    }
+
+    if (closeBtn && this.peoplePanel) {
+      closeBtn.addEventListener('click', () => {
+        this.peoplePanel?.classList.remove('visible');
+      });
+    }
+  }
+
+  private populatePeopleList(): void {
+    if (!this.peopleList || !this.graph) return;
+
+    const nodes = this.graph.getNodesArray();
+
+    // Group by generation
+    const byGeneration = new Map<number, typeof nodes>();
+    nodes.forEach(node => {
+      const gen = node.generation;
+      if (!byGeneration.has(gen)) {
+        byGeneration.set(gen, []);
+      }
+      byGeneration.get(gen)!.push(node);
+    });
+
+    // Sort generations
+    const sortedGens = Array.from(byGeneration.keys()).sort((a, b) => a - b);
+
+    let html = '';
+    sortedGens.forEach(gen => {
+      const genNodes = byGeneration.get(gen)!;
+      // Sort by name within generation
+      genNodes.sort((a, b) => a.person.name.localeCompare(b.person.name));
+
+      const genLabel = gen === 0 ? 'Center' :
+                       gen > 0 ? `Generation +${gen}` :
+                       `Generation ${gen}`;
+
+      html += `<div class="people-list-item generation-header">${genLabel} (${genNodes.length})</div>`;
+
+      genNodes.forEach(node => {
+        const person = node.person;
+        const dates = person.birthDate
+          ? `${person.birthDate}${person.deathDate ? ' — ' + person.deathDate : ''}`
+          : '';
+
+        html += `
+          <div class="people-list-item" data-person-id="${person.id}">
+            <div class="name">${person.name}</div>
+            ${dates ? `<div class="dates">${dates}</div>` : ''}
+          </div>
+        `;
+      });
+    });
+
+    this.peopleList.innerHTML = html;
+
+    // Add click handlers
+    this.peopleList.querySelectorAll('.people-list-item:not(.generation-header)').forEach((item) => {
+      item.addEventListener('click', () => {
+        const personId = item.getAttribute('data-person-id');
+        if (personId) {
+          this.flyToPerson(personId);
+        }
+      });
+    });
+  }
+
+  flyToPerson(personId: string): void {
+    if (!this.renderer || !this.graph) return;
+
+    // Fly to the node
+    this.renderer.flyToNode(personId);
+
+    // Update info panel
+    const node = this.graph.nodes.get(personId);
+    if (node) {
+      this.updateInfoPanel(node.person);
+    }
   }
 
   private async init(): Promise<void> {

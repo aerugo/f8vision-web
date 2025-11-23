@@ -182,6 +182,310 @@
         color: #7090a0;
       }
 
+      /* Search Panel */
+      #search-panel {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 320px;
+        z-index: 100;
+      }
+
+      #search-container {
+        position: relative;
+      }
+
+      #search-input {
+        width: 100%;
+        padding: 12px 16px 12px 40px;
+        background: rgba(10, 15, 30, 0.85);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        border-radius: 24px;
+        color: #e0f0ff;
+        font-size: 0.9em;
+        outline: none;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        box-shadow: 0 0 20px rgba(80, 150, 255, 0.1);
+      }
+
+      #search-input::placeholder {
+        color: #506880;
+      }
+
+      #search-input:focus {
+        border-color: rgba(100, 180, 255, 0.6);
+        box-shadow: 0 0 30px rgba(80, 150, 255, 0.25);
+      }
+
+      #search-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 16px;
+        height: 16px;
+        color: #506880;
+        pointer-events: none;
+      }
+
+      #search-clear {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 20px;
+        background: rgba(100, 180, 255, 0.2);
+        border: none;
+        border-radius: 50%;
+        color: #80d4ff;
+        cursor: pointer;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        line-height: 1;
+        transition: all 0.2s ease;
+      }
+
+      #search-clear:hover {
+        background: rgba(100, 180, 255, 0.4);
+      }
+
+      #search-clear.visible {
+        display: flex;
+      }
+
+      #search-results {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        max-height: 400px;
+        overflow-y: auto;
+        background: rgba(10, 15, 30, 0.95);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        border-radius: 12px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 0 30px rgba(80, 150, 255, 0.2);
+        opacity: 0;
+        transform: translateY(-10px);
+        pointer-events: none;
+        transition: all 0.3s ease;
+      }
+
+      #search-results.visible {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      #search-results::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #search-results::-webkit-scrollbar-track {
+        background: rgba(80, 150, 255, 0.1);
+        border-radius: 3px;
+      }
+
+      #search-results::-webkit-scrollbar-thumb {
+        background: rgba(80, 150, 255, 0.3);
+        border-radius: 3px;
+      }
+
+      .search-result-item {
+        padding: 12px 16px;
+        cursor: pointer;
+        border-bottom: 1px solid rgba(100, 180, 255, 0.1);
+        transition: all 0.2s ease;
+      }
+
+      .search-result-item:last-child {
+        border-bottom: none;
+      }
+
+      .search-result-item:hover {
+        background: rgba(64, 128, 255, 0.2);
+      }
+
+      .search-result-item.selected {
+        background: rgba(64, 128, 255, 0.3);
+      }
+
+      .search-result-name {
+        color: #80d4ff;
+        font-size: 0.95em;
+        margin-bottom: 4px;
+        text-shadow: 0 0 10px rgba(128, 212, 255, 0.3);
+      }
+
+      .search-result-dates {
+        color: #607890;
+        font-size: 0.75em;
+      }
+
+      .search-result-highlight {
+        background: rgba(128, 212, 255, 0.3);
+        border-radius: 2px;
+        padding: 0 2px;
+      }
+
+      #search-count {
+        padding: 8px 16px;
+        font-size: 0.75em;
+        color: #506880;
+        border-bottom: 1px solid rgba(100, 180, 255, 0.15);
+      }
+
+      #no-results {
+        padding: 20px 16px;
+        text-align: center;
+        color: #506880;
+        font-size: 0.85em;
+      }
+
+      /* People list toggle */
+      #people-toggle {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(64, 128, 255, 0.15);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        color: #80d4ff;
+        padding: 10px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.85em;
+        transition: all 0.2s ease;
+        backdrop-filter: blur(5px);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      #people-toggle:hover {
+        background: rgba(64, 128, 255, 0.3);
+        border-color: rgba(100, 180, 255, 0.5);
+        box-shadow: 0 0 15px rgba(80, 150, 255, 0.3);
+      }
+
+      /* Full people list panel */
+      #people-panel {
+        position: absolute;
+        top: 80px;
+        right: 20px;
+        bottom: 80px;
+        width: 280px;
+        background: rgba(10, 15, 30, 0.9);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        border-radius: 12px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 0 30px rgba(80, 150, 255, 0.15);
+        opacity: 0;
+        transform: translateX(20px);
+        pointer-events: none;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      #people-panel.visible {
+        opacity: 1;
+        transform: translateX(0);
+        pointer-events: auto;
+      }
+
+      #people-panel-header {
+        padding: 16px;
+        border-bottom: 1px solid rgba(100, 180, 255, 0.2);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      #people-panel-header h3 {
+        color: #80d4ff;
+        font-size: 0.95em;
+        font-weight: 400;
+        text-shadow: 0 0 10px rgba(128, 212, 255, 0.3);
+      }
+
+      #people-panel-close {
+        background: transparent;
+        border: none;
+        color: #607890;
+        cursor: pointer;
+        font-size: 1.2em;
+        line-height: 1;
+        padding: 4px;
+        transition: color 0.2s ease;
+      }
+
+      #people-panel-close:hover {
+        color: #80d4ff;
+      }
+
+      #people-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+      }
+
+      #people-list::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #people-list::-webkit-scrollbar-track {
+        background: rgba(80, 150, 255, 0.1);
+      }
+
+      #people-list::-webkit-scrollbar-thumb {
+        background: rgba(80, 150, 255, 0.3);
+        border-radius: 3px;
+      }
+
+      .people-list-item {
+        padding: 10px 16px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-left: 2px solid transparent;
+      }
+
+      .people-list-item:hover {
+        background: rgba(64, 128, 255, 0.15);
+        border-left-color: rgba(100, 180, 255, 0.5);
+      }
+
+      .people-list-item .name {
+        color: #c0d8e8;
+        font-size: 0.85em;
+        margin-bottom: 2px;
+      }
+
+      .people-list-item .dates {
+        color: #506880;
+        font-size: 0.7em;
+      }
+
+      .people-list-item.generation-header {
+        background: rgba(64, 128, 255, 0.1);
+        color: #607890;
+        font-size: 0.7em;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 8px 16px;
+        cursor: default;
+        border-left: none;
+      }
+
+      .people-list-item.generation-header:hover {
+        background: rgba(64, 128, 255, 0.1);
+      }
+
       #loading {
         position: absolute;
         top: 50%;
@@ -275,6 +579,39 @@
         <div class="relations" id="person-relations"></div>
       </div>
 
+      <!-- Search Panel -->
+      <div id="search-panel">
+        <div id="search-container">
+          <svg id="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+          <input type="text" id="search-input" placeholder="Search people..." autocomplete="off" />
+          <button id="search-clear" aria-label="Clear search">&times;</button>
+          <div id="search-results"></div>
+        </div>
+      </div>
+
+      <!-- People List Toggle -->
+      <button id="people-toggle">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+        <span>All People</span>
+      </button>
+
+      <!-- People Panel -->
+      <div id="people-panel">
+        <div id="people-panel-header">
+          <h3>Family Members</h3>
+          <button id="people-panel-close">&times;</button>
+        </div>
+        <div id="people-list"></div>
+      </div>
+
       <div id="loading">
         <div class="spinner"></div>
         <span>Weaving ancestral threads...</span>
@@ -283,7 +620,8 @@
       <div id="controls">
         <div class="control-hint"><span class="key">Drag</span> Rotate view</div>
         <div class="control-hint"><span class="key">Scroll</span> Zoom in/out</div>
-        <div class="control-hint"><span class="key">Hover</span> View details</div>
+        <div class="control-hint"><span class="key">Click</span> Fly to person</div>
+        <div class="control-hint"><span class="key">Ctrl+K</span> Search</div>
         <div class="control-hint"><span class="key">R</span> Reset view</div>
       </div>
     </div>
