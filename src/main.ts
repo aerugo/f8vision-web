@@ -673,30 +673,95 @@ class AncestralWebApp {
 
       bioEl.textContent = person.biography || 'No biography available.';
 
-      // Get relations
-      if (this.graph) {
-        const relatives = this.graph.getRelatives(person.id);
-        const relativeNames = relatives
-          .slice(0, 5) // Limit for UI
-          .map((id) => this.graph?.nodes.get(id)?.person.name)
-          .filter(Boolean);
-
-        const moreCount = relatives.length - 5;
-        let relText = relativeNames.length > 0
-          ? `Connected to: ${relativeNames.join(', ')}`
-          : '';
-
-        if (moreCount > 0) {
-          relText += ` and ${moreCount} more`;
-        }
-
-        relationsEl.textContent = relText;
-      }
+      // Build categorized relations
+      this.renderRelations(person, relationsEl);
 
       panel.classList.add('visible');
     } else {
       panel.classList.remove('visible');
     }
+  }
+
+  private renderRelations(person: Person, container: HTMLElement): void {
+    if (!this.graph) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const html: string[] = [];
+
+    // Helper to create relation items
+    const createRelationGroup = (label: string, personIds: string[]): string => {
+      if (personIds.length === 0) return '';
+
+      const items = personIds
+        .map(id => {
+          const node = this.graph?.nodes.get(id);
+          if (!node) return null;
+          return `<span class="relation-item" data-person-id="${id}">${node.person.name}</span>`;
+        })
+        .filter(Boolean)
+        .join('');
+
+      if (!items) return '';
+
+      return `
+        <div class="relation-group">
+          <div class="relation-label">${label}</div>
+          <div>${items}</div>
+        </div>
+      `;
+    };
+
+    // Parents
+    if (person.parentIds && person.parentIds.length > 0) {
+      html.push(createRelationGroup('Parents', person.parentIds));
+    }
+
+    // Children
+    if (person.childIds && person.childIds.length > 0) {
+      html.push(createRelationGroup('Children', person.childIds));
+    }
+
+    // Co-parents (people with whom they share children)
+    const coParentIds = this.getCoParents(person);
+    if (coParentIds.length > 0) {
+      html.push(createRelationGroup('Co-parent', coParentIds));
+    }
+
+    container.innerHTML = html.join('');
+
+    // Add click handlers to all relation items
+    container.querySelectorAll('.relation-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const personId = item.getAttribute('data-person-id');
+        if (personId) {
+          this.flyToPerson(personId);
+        }
+      });
+    });
+  }
+
+  private getCoParents(person: Person): string[] {
+    if (!this.graph || !person.childIds || person.childIds.length === 0) {
+      return [];
+    }
+
+    const coParentIds = new Set<string>();
+
+    // For each child, find the other parents
+    for (const childId of person.childIds) {
+      const childNode = this.graph.nodes.get(childId);
+      if (!childNode || !childNode.person.parentIds) continue;
+
+      for (const parentId of childNode.person.parentIds) {
+        if (parentId !== person.id) {
+          coParentIds.add(parentId);
+        }
+      }
+    }
+
+    return Array.from(coParentIds);
   }
 }
 
