@@ -49,14 +49,14 @@ export class AncestralWebRenderer {
     // Scene setup
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x020408);
-    this.scene.fog = new THREE.FogExp2(0x020408, 0.003);
+    this.scene.fog = new THREE.FogExp2(0x020408, 0.0015);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
       60,
       container.clientWidth / container.clientHeight,
       0.1,
-      2000
+      5000
     );
     this.camera.position.set(0, 50, 150);
 
@@ -75,8 +75,8 @@ export class AncestralWebRenderer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
-    this.controls.maxDistance = 500;
-    this.controls.minDistance = 20;
+    this.controls.maxDistance = 2000;
+    this.controls.minDistance = 10;
 
     // Event listeners
     this.setupEventListeners(container);
