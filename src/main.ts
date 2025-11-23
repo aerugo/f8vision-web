@@ -574,6 +574,11 @@ class AncestralWebApp {
         this.updateInfoPanel(person);
       });
 
+      // Setup click callback to keep info panel open when clicking an orb
+      this.renderer.onClick((person) => {
+        this.updateInfoPanel(person);
+      });
+
       // Render the graph
       this.renderer.renderGraph(nodes, this.graph.edges);
 
