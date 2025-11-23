@@ -1,14 +1,22 @@
 import type { GraphNode, GraphEdge, Vec3, EngineConfig } from '../types';
+import { BarnesHutTree } from './barnesHut';
+
+// Threshold for using Barnes-Hut algorithm
+const BARNES_HUT_THRESHOLD = 100;
 
 /**
  * 3D Force-Directed Layout Algorithm
  * Positions nodes using physics simulation with generation-based layering
+ * Uses Barnes-Hut approximation for O(n log n) performance on large graphs
  */
 export class ForceDirectedLayout {
   private config: EngineConfig['layout'];
+  private barnesHut: BarnesHutTree;
+  private useBarnesHut: boolean = false;
 
   constructor(config: EngineConfig['layout']) {
     this.config = config;
+    this.barnesHut = new BarnesHutTree(0.7); // theta = 0.7 for good balance
   }
 
   /**
@@ -19,6 +27,13 @@ export class ForceDirectedLayout {
     edges: GraphEdge[],
     centeredId: string
   ): void {
+    // Use Barnes-Hut for large graphs
+    this.useBarnesHut = nodes.length > BARNES_HUT_THRESHOLD;
+
+    if (this.useBarnesHut) {
+      console.log(`Using Barnes-Hut algorithm for ${nodes.length} nodes`);
+    }
+
     // Initialize positions
     this.initializePositions(nodes, centeredId);
 
@@ -85,7 +100,11 @@ export class ForceDirectedLayout {
     }
 
     // Apply repulsion between all nodes
-    this.applyRepulsion(nodes);
+    if (this.useBarnesHut) {
+      this.applyRepulsionBarnesHut(nodes);
+    } else {
+      this.applyRepulsionDirect(nodes);
+    }
 
     // Apply attraction along edges
     this.applyAttraction(nodes, edges);
@@ -108,9 +127,31 @@ export class ForceDirectedLayout {
   }
 
   /**
-   * Repulsion force between all node pairs (Barnes-Hut optimization possible)
+   * Repulsion using Barnes-Hut approximation - O(n log n)
    */
-  private applyRepulsion(nodes: GraphNode[]): void {
+  private applyRepulsionBarnesHut(nodes: GraphNode[]): void {
+    // Build octree from current positions
+    const positions = nodes.map(n => n.position);
+    this.barnesHut.build(positions);
+
+    // Calculate force on each node
+    for (let i = 0; i < nodes.length; i++) {
+      const force = this.barnesHut.calculateForce(
+        i,
+        nodes[i].position,
+        this.config.repulsionForce
+      );
+
+      nodes[i].velocity.x += force.x;
+      nodes[i].velocity.y += force.y;
+      nodes[i].velocity.z += force.z;
+    }
+  }
+
+  /**
+   * Direct repulsion calculation - O(n²)
+   */
+  private applyRepulsionDirect(nodes: GraphNode[]): void {
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i];
