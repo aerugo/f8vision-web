@@ -507,6 +507,11 @@ export class AncestralWebRenderer {
       (this.backgroundParticles.material as THREE.Material).dispose();
     }
 
+    // Remove canvas from DOM
+    if (this.renderer.domElement.parentNode) {
+      this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
+
     this.renderer.dispose();
     this.controls.dispose();
   }
