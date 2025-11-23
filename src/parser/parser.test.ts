@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFamily, validateFamilyData } from './parser';
+import { parseFamily, parseFamilyJson, parseGenealogyFile, detectFileFormat, validateFamilyData } from './parser';
 import type { FamilyData } from '../types';
 
 describe('Family YAML Parser', () => {
@@ -147,6 +147,110 @@ people:
 
       const errors = validateFamilyData(invalidData);
       expect(errors.some(e => e.includes('duplicate'))).toBe(true);
+    });
+  });
+
+  describe('JSON parsing', () => {
+    it('should parse a simple family from JSON', () => {
+      const json = JSON.stringify({
+        meta: {
+          title: 'JSON Family',
+          centeredPersonId: 'person1',
+        },
+        people: [
+          {
+            id: 'person1',
+            name: 'John Doe',
+            birthDate: '1950-01-15',
+          },
+        ],
+      });
+
+      const result = parseFamilyJson(json);
+      expect(result.meta?.title).toBe('JSON Family');
+      expect(result.people).toHaveLength(1);
+      expect(result.people[0].name).toBe('John Doe');
+    });
+
+    it('should parse complex family from JSON', () => {
+      const json = JSON.stringify({
+        people: [
+          {
+            id: 'parent1',
+            name: 'Parent One',
+            childIds: ['child1'],
+          },
+          {
+            id: 'child1',
+            name: 'Child One',
+            parentIds: ['parent1'],
+          },
+        ],
+      });
+
+      const result = parseFamilyJson(json);
+      expect(result.people).toHaveLength(2);
+      const child = result.people.find(p => p.id === 'child1');
+      expect(child?.parentIds).toContain('parent1');
+    });
+  });
+
+  describe('detectFileFormat', () => {
+    it('should detect JSON from filename', () => {
+      expect(detectFileFormat('{}', 'family.json')).toBe('json');
+      expect(detectFileFormat('{}', 'data.JSON')).toBe('json');
+    });
+
+    it('should detect YAML from filename', () => {
+      expect(detectFileFormat('', 'family.yaml')).toBe('yaml');
+      expect(detectFileFormat('', 'family.yml')).toBe('yaml');
+      expect(detectFileFormat('', 'DATA.YAML')).toBe('yaml');
+    });
+
+    it('should detect JSON from content when no filename', () => {
+      expect(detectFileFormat('{"people": []}')).toBe('json');
+      expect(detectFileFormat('[{"id": "1"}]')).toBe('json');
+      expect(detectFileFormat('  {"people": []}')).toBe('json');
+    });
+
+    it('should default to YAML when content is not JSON-like', () => {
+      expect(detectFileFormat('people:\n  - id: 1')).toBe('yaml');
+      expect(detectFileFormat('meta:\n  title: Test')).toBe('yaml');
+    });
+  });
+
+  describe('parseGenealogyFile', () => {
+    it('should auto-detect and parse YAML content', () => {
+      const yaml = `
+meta:
+  title: Auto YAML
+people:
+  - id: p1
+    name: Person One
+`;
+      const result = parseGenealogyFile(yaml);
+      expect(result.meta?.title).toBe('Auto YAML');
+      expect(result.people).toHaveLength(1);
+    });
+
+    it('should auto-detect and parse JSON content', () => {
+      const json = JSON.stringify({
+        meta: { title: 'Auto JSON' },
+        people: [{ id: 'p1', name: 'Person One' }],
+      });
+
+      const result = parseGenealogyFile(json);
+      expect(result.meta?.title).toBe('Auto JSON');
+      expect(result.people).toHaveLength(1);
+    });
+
+    it('should use filename hint when provided', () => {
+      const json = JSON.stringify({
+        people: [{ id: 'p1', name: 'Test' }],
+      });
+
+      const result = parseGenealogyFile(json, 'family.json');
+      expect(result.people).toHaveLength(1);
     });
   });
 });

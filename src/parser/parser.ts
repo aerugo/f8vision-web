@@ -2,11 +2,35 @@ import * as yaml from 'js-yaml';
 import type { FamilyData } from '../types';
 
 /**
- * Parse YAML string into FamilyData structure
+ * Supported file formats for genealogy data
  */
-export function parseFamily(yamlString: string): FamilyData {
-  const parsed = yaml.load(yamlString) as Record<string, unknown>;
+export type FileFormat = 'yaml' | 'json';
 
+/**
+ * Detect file format from content or filename
+ */
+export function detectFileFormat(content: string, filename?: string): FileFormat {
+  // Check filename extension first
+  if (filename) {
+    const ext = filename.toLowerCase().split('.').pop();
+    if (ext === 'json') return 'json';
+    if (ext === 'yaml' || ext === 'yml') return 'yaml';
+  }
+
+  // Try to detect from content
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return 'json';
+  }
+
+  // Default to YAML
+  return 'yaml';
+}
+
+/**
+ * Parse raw data object into FamilyData structure
+ */
+function parseRawData(parsed: Record<string, unknown>): FamilyData {
   const familyData: FamilyData = {
     meta: parsed.meta as FamilyData['meta'],
     people: [],
@@ -32,6 +56,35 @@ export function parseFamily(yamlString: string): FamilyData {
   }
 
   return familyData;
+}
+
+/**
+ * Parse YAML string into FamilyData structure
+ */
+export function parseFamily(yamlString: string): FamilyData {
+  const parsed = yaml.load(yamlString) as Record<string, unknown>;
+  return parseRawData(parsed);
+}
+
+/**
+ * Parse JSON string into FamilyData structure
+ */
+export function parseFamilyJson(jsonString: string): FamilyData {
+  const parsed = JSON.parse(jsonString) as Record<string, unknown>;
+  return parseRawData(parsed);
+}
+
+/**
+ * Parse genealogy file content with automatic format detection
+ */
+export function parseGenealogyFile(content: string, filename?: string): FamilyData {
+  const format = detectFileFormat(content, filename);
+
+  if (format === 'json') {
+    return parseFamilyJson(content);
+  }
+
+  return parseFamily(content);
 }
 
 /**
