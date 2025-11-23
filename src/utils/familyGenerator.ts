@@ -6,11 +6,11 @@
 import type { Person, FamilyData } from '../types';
 
 interface GeneratorConfig {
-  generations: number; // Number of generations above and below center
+  generations: number;
   avgChildrenPerCouple: number;
   childrenVariance: number;
   biographyProbability: number;
-  centerGeneration: number; // Which generation is the centered person (0 = oldest)
+  centerGeneration: number;
 }
 
 const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
@@ -64,7 +64,7 @@ function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function generateBiography(): string | undefined {
+function generateBiography(): string {
   const template = randomElement(BIOGRAPHY_TEMPLATES);
   return template
     .replace('{profession}', randomElement(PROFESSIONS))
@@ -95,15 +95,12 @@ function generatePerson(
     birthDate: `${birthYear}-${String(randomInt(1, 12)).padStart(2, '0')}-${String(randomInt(1, 28)).padStart(2, '0')}`,
   };
 
-  // Add death date for older generations
   if (generation < config.centerGeneration - 1) {
     person.deathDate = `${birthYear + randomInt(60, 90)}-${String(randomInt(1, 12)).padStart(2, '0')}-${String(randomInt(1, 28)).padStart(2, '0')}`;
   }
 
-  // Add biography based on probability
   if (Math.random() < config.biographyProbability) {
     person.biography = generateBiography();
-    // Some people get longer biographies
     if (Math.random() < 0.3) {
       person.biography += '\n\n' + generateBiography();
     }
@@ -123,15 +120,13 @@ export function generateLargeFamily(config: Partial<GeneratorConfig> = {}): Fami
   let personCounter = 0;
   const genId = () => `person_${personCounter++}`;
 
-  // Generate by generation
   const generationPeople: Map<number, Person[]> = new Map();
 
-  // Start with oldest generation (ancestors)
   const oldestGen = -Math.floor(cfg.generations / 2);
   const youngestGen = Math.ceil(cfg.generations / 2);
 
-  // Create founding couples for oldest generation
-  const foundingCouples = Math.max(2, Math.floor(cfg.generations / 2));
+  // Create founding couples - more couples for more generations
+  const foundingCouples = Math.max(2, Math.ceil(cfg.generations / 2));
 
   for (let c = 0; c < foundingCouples; c++) {
     const person1 = generatePerson(genId(), oldestGen, familyName, cfg);
@@ -168,6 +163,15 @@ export function generateLargeFamily(config: Partial<GeneratorConfig> = {}): Fami
       }
     }
 
+    // If no couples found, create a new founding couple for this generation
+    if (couples.length === 0) {
+      const person1 = generatePerson(genId(), gen, familyName, cfg);
+      const person2 = generatePerson(genId(), gen, randomElement(LAST_NAMES), cfg);
+      person1.spouseIds = [person2.id];
+      person2.spouseIds = [person1.id];
+      currentGen.push(person1, person2);
+    }
+
     // Each couple has children
     for (const [parent1, parent2] of couples) {
       const numChildren = Math.max(1, Math.round(
@@ -177,7 +181,6 @@ export function generateLargeFamily(config: Partial<GeneratorConfig> = {}): Fami
       const children: Person[] = [];
 
       for (let i = 0; i < numChildren; i++) {
-        // Alternate last names or hyphenate
         const childLastName = Math.random() < 0.7
           ? familyName
           : `${familyName}-${parent2.name.split(' ').pop()}`;
@@ -189,26 +192,27 @@ export function generateLargeFamily(config: Partial<GeneratorConfig> = {}): Fami
         currentGen.push(child);
       }
 
-      // Update parents with child IDs
       parent1.childIds = children.map(c => c.id);
       parent2.childIds = children.map(c => c.id);
     }
 
-    // Some children in current generation become couples
-    if (gen < youngestGen) {
-      const unpairedInGen = [...currentGen];
+    // Some children in current generation become couples (if not last generation)
+    if (gen < youngestGen && currentGen.length > 0) {
+      // Ensure at least some people get paired for next generation
+      const unpairedInGen = [...currentGen.filter(p => !p.spouseIds)];
+      const minPairs = Math.max(1, Math.floor(unpairedInGen.length * 0.5));
+      let pairsCreated = 0;
 
-      // Pair up some members of this generation
-      while (unpairedInGen.length >= 2 && Math.random() < 0.8) {
+      while (unpairedInGen.length >= 1 && pairsCreated < minPairs) {
         const idx1 = Math.floor(Math.random() * unpairedInGen.length);
         const person1 = unpairedInGen.splice(idx1, 1)[0];
 
-        // Find a spouse from outside (new person)
         const spouse = generatePerson(genId(), gen, randomElement(LAST_NAMES), cfg);
         spouse.spouseIds = [person1.id];
         person1.spouseIds = [spouse.id];
 
         currentGen.push(spouse);
+        pairsCreated++;
       }
     }
 
@@ -220,9 +224,32 @@ export function generateLargeFamily(config: Partial<GeneratorConfig> = {}): Fami
     people.push(...genPeople);
   }
 
-  // Find a person near the center generation to be the centered person
-  const centerGen = generationPeople.get(0) || generationPeople.get(1) || people;
-  const centeredPerson = centerGen[Math.floor(centerGen.length / 2)];
+  // Find a person near the center generation
+  let centeredPerson: Person | undefined;
+
+  // Try to find someone in generation 0, then nearby generations
+  for (const tryGen of [0, 1, -1, 2, -2]) {
+    const genPeople = generationPeople.get(tryGen);
+    if (genPeople && genPeople.length > 0) {
+      centeredPerson = genPeople[Math.floor(genPeople.length / 2)];
+      break;
+    }
+  }
+
+  // Fallback to first person if no generation found
+  if (!centeredPerson && people.length > 0) {
+    centeredPerson = people[0];
+  }
+
+  // Ultimate fallback: create a person
+  if (!centeredPerson) {
+    centeredPerson = {
+      id: 'fallback_person',
+      name: `${randomElement(FIRST_NAMES)} ${familyName}`,
+      birthDate: '1950-01-01',
+    };
+    people.push(centeredPerson);
+  }
 
   // Give centered person a detailed biography
   centeredPerson.biography = `${centeredPerson.name} is the central figure of this family web, representing the connecting point between generations past and future. Their life story interweaves the threads of countless ancestors and descendants, each contributing to the rich tapestry of family history.\n\nBorn into a legacy of ${randomElement(PROFESSIONS)}s and ${randomElement(PROFESSIONS)}s, they have carried forward the family tradition while forging their own unique path. Their contributions to ${randomElement(FIELDS)} have been recognized worldwide.`;
@@ -241,10 +268,6 @@ export function generateLargeFamily(config: Partial<GeneratorConfig> = {}): Fami
  * Generate family with specific node count target
  */
 export function generateFamilyWithNodeCount(targetNodes: number): FamilyData {
-  // Estimate generations needed
-  // With ~2.5 children per couple, each generation roughly 1.5x
-  // generations: 4 -> ~30 nodes, 5 -> ~60, 6 -> ~120, 7 -> ~250, 8 -> ~500
-
   let generations = 4;
   if (targetNodes > 50) generations = 5;
   if (targetNodes > 100) generations = 6;
@@ -252,12 +275,12 @@ export function generateFamilyWithNodeCount(targetNodes: number): FamilyData {
   if (targetNodes > 400) generations = 8;
   if (targetNodes > 800) generations = 9;
 
-  const avgChildren = targetNodes > 500 ? 3 : 2.5;
+  const avgChildren = targetNodes > 500 ? 3.5 : targetNodes > 200 ? 3 : 2.5;
 
   return generateLargeFamily({
     generations,
     avgChildrenPerCouple: avgChildren,
-    childrenVariance: 1.5,
+    childrenVariance: 1.0,
     biographyProbability: Math.max(0.1, 0.4 - targetNodes / 2000),
   });
 }
