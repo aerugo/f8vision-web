@@ -888,6 +888,19 @@ class AncestralWebApp {
       html.push(createRelationGroup('Parents', person.parentIds));
     }
 
+    // Siblings - grouped by shared parents
+    const siblingGroups = this.getSiblingsGrouped(person);
+    for (const group of siblingGroups) {
+      let label: string;
+      if (group.isFullSiblings) {
+        label = 'Siblings';
+      } else {
+        // Half-siblings: "Siblings through Adam and Eve"
+        label = `Siblings through ${group.parentNames.join(' and ')}`;
+      }
+      html.push(createRelationGroup(label, group.siblingIds));
+    }
+
     // Children
     if (person.childIds && person.childIds.length > 0) {
       html.push(createRelationGroup('Children', person.childIds));
@@ -932,6 +945,80 @@ class AncestralWebApp {
     }
 
     return Array.from(coParentIds);
+  }
+
+  /**
+   * Get siblings grouped by shared parents
+   * Returns an array of groups: { parentIds: string[], parentNames: string[], siblingIds: string[] }
+   * Full siblings (sharing all parents) are identified when parentIds matches person's parentIds
+   */
+  private getSiblingsGrouped(person: Person): Array<{ parentIds: string[]; parentNames: string[]; siblingIds: string[]; isFullSiblings: boolean }> {
+    if (!this.graph || !person.parentIds || person.parentIds.length === 0) {
+      return [];
+    }
+
+    // Map to track siblings by their parent set
+    // Key: sorted parent IDs joined by "|", Value: sibling IDs
+    const siblingsByParentSet = new Map<string, Set<string>>();
+
+    // For each parent, find all their children (potential siblings)
+    for (const parentId of person.parentIds) {
+      const parentNode = this.graph.nodes.get(parentId);
+      if (!parentNode || !parentNode.person.childIds) continue;
+
+      for (const childId of parentNode.person.childIds) {
+        // Skip the person themselves
+        if (childId === person.id) continue;
+
+        const childNode = this.graph.nodes.get(childId);
+        if (!childNode || !childNode.person.parentIds) continue;
+
+        // Find shared parents between this sibling and the person
+        const sharedParentIds = childNode.person.parentIds.filter(pid =>
+          person.parentIds!.includes(pid)
+        ).sort();
+
+        if (sharedParentIds.length === 0) continue;
+
+        const key = sharedParentIds.join('|');
+        if (!siblingsByParentSet.has(key)) {
+          siblingsByParentSet.set(key, new Set());
+        }
+        siblingsByParentSet.get(key)!.add(childId);
+      }
+    }
+
+    // Convert to result format
+    const sortedPersonParentIds = [...person.parentIds].sort();
+    const result: Array<{ parentIds: string[]; parentNames: string[]; siblingIds: string[]; isFullSiblings: boolean }> = [];
+
+    for (const [key, siblingIdSet] of siblingsByParentSet) {
+      const parentIds = key.split('|');
+      const parentNames = parentIds.map(pid => {
+        const node = this.graph?.nodes.get(pid);
+        return node?.person.name || pid;
+      });
+
+      // Check if this is a full sibling group (shares all of person's parents)
+      const isFullSiblings = parentIds.length === sortedPersonParentIds.length &&
+        parentIds.every(pid => sortedPersonParentIds.includes(pid));
+
+      result.push({
+        parentIds,
+        parentNames,
+        siblingIds: Array.from(siblingIdSet),
+        isFullSiblings,
+      });
+    }
+
+    // Sort: full siblings first, then by number of shared parents (descending)
+    result.sort((a, b) => {
+      if (a.isFullSiblings && !b.isFullSiblings) return -1;
+      if (!a.isFullSiblings && b.isFullSiblings) return 1;
+      return b.parentIds.length - a.parentIds.length;
+    });
+
+    return result;
   }
 }
 
