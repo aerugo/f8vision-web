@@ -102,6 +102,13 @@
         display: none;
       }
 
+      .file-hint {
+        font-size: 0.65em;
+        color: #506880;
+        text-align: center;
+        margin-bottom: 8px;
+      }
+
       .button-group {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -582,12 +589,164 @@
         pointer-events: none;
         background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 5, 15, 0.5) 100%);
       }
+
+      /* Drop zone overlay */
+      #drop-zone {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(10, 20, 40, 0.95);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      #drop-zone.visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .drop-zone-content {
+        text-align: center;
+        padding: 60px;
+        border: 3px dashed rgba(100, 180, 255, 0.5);
+        border-radius: 20px;
+        background: rgba(64, 128, 255, 0.1);
+        max-width: 500px;
+      }
+
+      .drop-zone-icon {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 20px;
+        color: #80d4ff;
+        animation: float 2s ease-in-out infinite;
+      }
+
+      @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+      }
+
+      .drop-zone-title {
+        font-size: 1.5em;
+        color: #80d4ff;
+        margin-bottom: 10px;
+        text-shadow: 0 0 20px rgba(128, 212, 255, 0.5);
+      }
+
+      .drop-zone-subtitle {
+        font-size: 0.9em;
+        color: #607890;
+      }
+
+      /* Toast notifications */
+      #toast-container {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: none;
+      }
+
+      .toast {
+        background: rgba(10, 15, 30, 0.95);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        border-radius: 8px;
+        padding: 12px 40px 12px 16px;
+        color: #e0f0ff;
+        font-size: 0.85em;
+        max-width: 400px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        pointer-events: auto;
+        white-space: pre-line;
+        position: relative;
+      }
+
+      .toast.toast-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .toast.toast-hiding {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+
+      .toast-success {
+        border-color: rgba(100, 255, 180, 0.5);
+        background: rgba(10, 30, 20, 0.95);
+      }
+
+      .toast-success .toast-message {
+        color: #80ffdd;
+      }
+
+      .toast-error {
+        border-color: rgba(255, 100, 100, 0.5);
+        background: rgba(30, 10, 10, 0.95);
+      }
+
+      .toast-error .toast-message {
+        color: #ff8080;
+      }
+
+      .toast-info {
+        border-color: rgba(100, 180, 255, 0.5);
+      }
+
+      .toast-close {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        color: #607890;
+        font-size: 1.2em;
+        cursor: pointer;
+        padding: 4px 8px;
+        line-height: 1;
+        transition: color 0.2s ease;
+      }
+
+      .toast-close:hover {
+        color: #80d4ff;
+      }
     </style>
   </head>
   <body>
     <div id="app">
       <div id="canvas-container"></div>
       <div id="vignette"></div>
+
+      <!-- Drag and drop overlay -->
+      <div id="drop-zone">
+        <div class="drop-zone-content">
+          <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <div class="drop-zone-title">Drop your genealogy file here</div>
+          <div class="drop-zone-subtitle">Supports YAML (.yaml, .yml) and JSON (.json) formats</div>
+        </div>
+      </div>
 
       <div id="title-panel">
         <h1 id="family-title">Ancestral Web</h1>
@@ -596,9 +755,10 @@
 
       <div id="control-panel">
         <label class="file-input-label">
-          <input type="file" id="yaml-file" accept=".yaml,.yml" onchange="window.ancestralWeb?.loadYamlFile(event)" />
-          Load YAML File
+          <input type="file" id="genealogy-file" accept=".yaml,.yml,.json" onchange="window.ancestralWeb?.loadYamlFile(event)" />
+          Load File
         </label>
+        <div class="file-hint">YAML or JSON • Drag &amp; drop supported</div>
         <div class="button-group">
           <button onclick="window.ancestralWeb?.loadSmallFamily()">Small</button>
           <button onclick="window.ancestralWeb?.loadMediumFamily()">Medium</button>

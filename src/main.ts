@@ -3,13 +3,18 @@
  * A 3D visualization of family trees with bioluminescent ethereal aesthetics
  */
 
-import { parseFamily, validateFamilyData } from './parser';
+import { parseFamily, parseGenealogyFile, validateFamilyData } from './parser';
 import { FamilyGraph } from './graph';
 import { ForceDirectedLayout } from './core';
 import { AncestralWebRenderer } from './renderer';
 import { DEFAULT_CONFIG } from './types';
 import { generateFamilyWithNodeCount, generateLargeFamily } from './utils';
 import type { Person, FamilyData } from './types';
+
+/**
+ * Toast notification types
+ */
+type ToastType = 'success' | 'error' | 'info';
 
 // Extend window for global access
 declare global {
@@ -211,12 +216,15 @@ class AncestralWebApp {
   private selectedSearchIndex: number = -1;
   // Focused person state: the person whose info is "locked" in place
   private focusedPerson: Person | null = null;
+  private toastContainer: HTMLElement | null = null;
 
   constructor() {
     this.init();
     this.setupKeyboardControls();
     this.setupSearch();
     this.setupPeoplePanel();
+    this.setupToastContainer();
+    this.setupDragAndDrop();
   }
 
   private setupKeyboardControls(): void {
@@ -494,6 +502,160 @@ class AncestralWebApp {
     });
   }
 
+  private setupToastContainer(): void {
+    // Create toast container if it doesn't exist
+    let container = document.getElementById('toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'toast-container';
+      document.body.appendChild(container);
+    }
+    this.toastContainer = container;
+  }
+
+  private showToast(message: string, type: ToastType = 'info', duration: number = 5000): void {
+    if (!this.toastContainer) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+      <span class="toast-message">${message}</span>
+      <button class="toast-close">&times;</button>
+    `;
+
+    // Add close handler
+    const closeBtn = toast.querySelector('.toast-close');
+    closeBtn?.addEventListener('click', () => {
+      toast.classList.add('toast-hiding');
+      setTimeout(() => toast.remove(), 300);
+    });
+
+    this.toastContainer.appendChild(toast);
+
+    // Trigger animation
+    requestAnimationFrame(() => {
+      toast.classList.add('toast-visible');
+    });
+
+    // Auto-remove after duration
+    if (duration > 0) {
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.classList.add('toast-hiding');
+          setTimeout(() => toast.remove(), 300);
+        }
+      }, duration);
+    }
+  }
+
+  private setupDragAndDrop(): void {
+    const dropZone = document.getElementById('drop-zone');
+    const app = document.getElementById('app');
+
+    if (!app) return;
+
+    // Prevent default drag behaviors on the whole document
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      document.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    // Show drop zone when dragging over the app
+    let dragCounter = 0;
+
+    app.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      if (dropZone) {
+        dropZone.classList.add('visible');
+      }
+    });
+
+    app.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter === 0 && dropZone) {
+        dropZone.classList.remove('visible');
+      }
+    });
+
+    app.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    app.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      if (dropZone) {
+        dropZone.classList.remove('visible');
+      }
+
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        await this.loadFile(files[0]);
+      }
+    });
+  }
+
+  /**
+   * Load a genealogy file (YAML or JSON) with validation and error handling
+   */
+  async loadFile(file: File): Promise<void> {
+    const validExtensions = ['.yaml', '.yml', '.json'];
+    const fileName = file.name.toLowerCase();
+    const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!hasValidExtension) {
+      this.showToast(
+        `Invalid file type. Please use ${validExtensions.join(', ')} files.`,
+        'error'
+      );
+      return;
+    }
+
+    try {
+      this.showLoading();
+      const text = await file.text();
+
+      // Parse the file with automatic format detection
+      const familyData = parseGenealogyFile(text, file.name);
+
+      // Validate the data
+      const errors = validateFamilyData(familyData);
+      if (errors.length > 0) {
+        this.hideLoading();
+        const errorList = errors.slice(0, 5).join('\n• ');
+        const moreErrors = errors.length > 5 ? `\n... and ${errors.length - 5} more errors` : '';
+        this.showToast(
+          `Validation errors:\n• ${errorList}${moreErrors}`,
+          'error',
+          10000
+        );
+        return;
+      }
+
+      // Check if there are any people
+      if (!familyData.people || familyData.people.length === 0) {
+        this.hideLoading();
+        this.showToast('The file contains no people data.', 'error');
+        return;
+      }
+
+      await this.loadFamily(familyData);
+      this.showToast(
+        `Loaded "${familyData.meta?.title || file.name}" with ${familyData.people.length} people.`,
+        'success'
+      );
+    } catch (error) {
+      this.hideLoading();
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.showToast(`Failed to load file: ${message}`, 'error');
+      console.error('Failed to load file:', error);
+    }
+  }
+
   flyToPerson(personId: string): void {
     if (!this.renderer || !this.graph) return;
 
@@ -643,14 +805,7 @@ class AncestralWebApp {
     if (!input.files || input.files.length === 0) return;
 
     const file = input.files[0];
-    try {
-      const text = await file.text();
-      const familyData = parseFamily(text);
-      await this.loadFamily(familyData);
-    } catch (error) {
-      console.error('Failed to load YAML file:', error);
-      alert('Failed to load YAML file. Please check the format.');
-    }
+    await this.loadFile(file);
 
     // Reset input for re-selection of same file
     input.value = '';
