@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GraphNode, GraphEdge, EngineConfig, Person } from '../types';
 import { DEFAULT_CONFIG } from '../types';
 import {
-  nodeVertexShader,
-  nodeFragmentShader,
+  instancedNodeVertexShader,
+  instancedNodeFragmentShader,
   edgeVertexShader,
   edgeFragmentShader,
   particleVertexShader,
@@ -15,9 +15,28 @@ export interface HoverCallback {
   (person: Person | null, screenPos: { x: number; y: number } | null): void;
 }
 
+export interface ClickCallback {
+  (person: Person | null): void;
+}
+
+interface CameraAnimation {
+  startPosition: THREE.Vector3;
+  endPosition: THREE.Vector3;
+  startTarget: THREE.Vector3;
+  endTarget: THREE.Vector3;
+  startTime: number;
+  duration: number;
+  onComplete?: () => void;
+}
+
+// Easing function for smooth animations
+const easeInOutCubic = (t: number): number =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
 /**
  * Main 3D renderer for the Ancestral Web visualization
  * Uses Three.js with custom shaders for ethereal bioluminescent effects
+ * Optimized with InstancedMesh for large graphs
  */
 export class AncestralWebRenderer {
   private scene: THREE.Scene;
@@ -26,8 +45,11 @@ export class AncestralWebRenderer {
   private controls: OrbitControls;
   private config: EngineConfig;
 
-  private nodeMeshes: Map<string, THREE.Mesh> = new Map();
-  private nodeUniforms: Map<string, Record<string, THREE.IUniform>> = new Map();
+  // Instanced rendering
+  private nodeInstancedMesh: THREE.InstancedMesh | null = null;
+  private nodeData: GraphNode[] = [];
+  private nodeUniforms: { uTime: THREE.IUniform; uColorPrimary: THREE.IUniform; uColorSecondary: THREE.IUniform; uGlowIntensity: THREE.IUniform } | null = null;
+
   private edgeLines: THREE.Line[] = [];
   private particleSystem: THREE.Points | null = null;
   private backgroundParticles: THREE.Points | null = null;
@@ -36,9 +58,11 @@ export class AncestralWebRenderer {
   private mouse: THREE.Vector2;
   private hoveredNode: GraphNode | null = null;
   private onHoverCallback: HoverCallback | null = null;
+  private onClickCallback: ClickCallback | null = null;
 
   private clock: THREE.Clock;
   private animationId: number = 0;
+  private cameraAnimation: CameraAnimation | null = null;
 
   constructor(container: HTMLElement, config: Partial<EngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -100,14 +124,40 @@ export class AncestralWebRenderer {
       this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     });
+
+    // Click to select and zoom to node
+    container.addEventListener('click', (event) => {
+      // Ignore if we're dragging (OrbitControls)
+      if (this.controls.enableRotate === false) return;
+
+      const rect = container.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      this.raycaster.setFromCamera(mouse, this.camera);
+
+      if (this.nodeInstancedMesh) {
+        const intersects = this.raycaster.intersectObject(this.nodeInstancedMesh);
+        if (intersects.length > 0) {
+          const instanceId = intersects[0].instanceId;
+          if (instanceId !== undefined && instanceId < this.nodeData.length) {
+            const node = this.nodeData[instanceId];
+            this.flyToNode(node.id);
+            if (this.onClickCallback) {
+              this.onClickCallback(node.person);
+            }
+          }
+        }
+      }
+    });
   }
 
   private setupLighting(): void {
-    // Ambient light for base illumination
     const ambient = new THREE.AmbientLight(0x203040, 0.5);
     this.scene.add(ambient);
 
-    // Subtle point lights for ethereal glow
     const light1 = new THREE.PointLight(0x4080ff, 1, 300);
     light1.position.set(50, 50, 50);
     this.scene.add(light1);
@@ -125,7 +175,6 @@ export class AncestralWebRenderer {
     const colors = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
-      // Spread particles in a large sphere
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(Math.random() * 2 - 1);
       const r = 100 + Math.random() * 400;
@@ -137,8 +186,7 @@ export class AncestralWebRenderer {
       phases[i] = Math.random();
       speeds[i] = 0.2 + Math.random() * 0.3;
 
-      // Varied ethereal colors
-      const hue = 0.5 + Math.random() * 0.3; // Cyan to blue
+      const hue = 0.5 + Math.random() * 0.3;
       const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
       colors[i * 3] = color.r;
       colors[i * 3 + 1] = color.g;
@@ -171,11 +219,11 @@ export class AncestralWebRenderer {
    * Render the family graph
    */
   renderGraph(nodes: GraphNode[], edges: GraphEdge[]): void {
-    // Clear existing meshes
     this.clearScene();
+    this.nodeData = nodes;
 
-    // Create node meshes
-    this.createNodeMeshes(nodes);
+    // Create instanced node mesh
+    this.createInstancedNodes(nodes);
 
     // Create edge lines
     this.createEdgeLines(nodes, edges);
@@ -186,16 +234,17 @@ export class AncestralWebRenderer {
     // Hide loading indicator
     const loading = document.getElementById('loading');
     if (loading) loading.style.display = 'none';
+
+    console.log(`Rendered ${nodes.length} nodes using InstancedMesh`);
   }
 
   private clearScene(): void {
-    for (const mesh of this.nodeMeshes.values()) {
-      this.scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
+    if (this.nodeInstancedMesh) {
+      this.scene.remove(this.nodeInstancedMesh);
+      this.nodeInstancedMesh.geometry.dispose();
+      (this.nodeInstancedMesh.material as THREE.Material).dispose();
+      this.nodeInstancedMesh = null;
     }
-    this.nodeMeshes.clear();
-    this.nodeUniforms.clear();
 
     for (const line of this.edgeLines) {
       this.scene.remove(line);
@@ -212,42 +261,73 @@ export class AncestralWebRenderer {
     }
   }
 
-  private createNodeMeshes(nodes: GraphNode[]): void {
+  private createInstancedNodes(nodes: GraphNode[]): void {
+    const count = nodes.length;
     const primary = new THREE.Color(this.config.visuals.colorPrimary);
     const secondary = new THREE.Color(this.config.visuals.colorSecondary);
 
-    for (const node of nodes) {
-      const size =
-        this.config.visuals.nodeBaseSize *
-        (1 + node.biographyWeight * this.config.visuals.nodeSizeMultiplier);
+    // Create base geometry - single sphere that will be instanced
+    const baseSize = this.config.visuals.nodeBaseSize;
+    const geometry = new THREE.SphereGeometry(baseSize, 24, 24);
 
-      const geometry = new THREE.SphereGeometry(size, 32, 32);
+    // Add instance attributes
+    const biographyWeights = new Float32Array(count);
+    const nodeIndices = new Float32Array(count);
 
-      const uniforms = {
-        uTime: { value: 0 },
-        uBiographyWeight: { value: node.biographyWeight },
-        uColorPrimary: { value: primary },
-        uColorSecondary: { value: secondary },
-        uGlowIntensity: { value: this.config.visuals.glowIntensity },
-      };
-
-      const material = new THREE.ShaderMaterial({
-        vertexShader: nodeVertexShader,
-        fragmentShader: nodeFragmentShader,
-        uniforms,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        side: THREE.FrontSide,
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(node.position.x, node.position.y, node.position.z);
-      mesh.userData = { node };
-
-      this.scene.add(mesh);
-      this.nodeMeshes.set(node.id, mesh);
-      this.nodeUniforms.set(node.id, uniforms);
+    for (let i = 0; i < count; i++) {
+      biographyWeights[i] = nodes[i].biographyWeight;
+      nodeIndices[i] = i;
     }
+
+    geometry.setAttribute(
+      'aBiographyWeight',
+      new THREE.InstancedBufferAttribute(biographyWeights, 1)
+    );
+    geometry.setAttribute(
+      'aNodeIndex',
+      new THREE.InstancedBufferAttribute(nodeIndices, 1)
+    );
+
+    // Create shader material
+    this.nodeUniforms = {
+      uTime: { value: 0 },
+      uColorPrimary: { value: primary },
+      uColorSecondary: { value: secondary },
+      uGlowIntensity: { value: this.config.visuals.glowIntensity },
+    };
+
+    const material = new THREE.ShaderMaterial({
+      vertexShader: instancedNodeVertexShader,
+      fragmentShader: instancedNodeFragmentShader,
+      uniforms: this.nodeUniforms,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      side: THREE.FrontSide,
+    });
+
+    // Create instanced mesh
+    this.nodeInstancedMesh = new THREE.InstancedMesh(geometry, material, count);
+
+    // Set instance transforms
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+
+    for (let i = 0; i < count; i++) {
+      const node = nodes[i];
+      position.set(node.position.x, node.position.y, node.position.z);
+
+      // Scale based on biography weight
+      const nodeScale = 1 + node.biographyWeight * this.config.visuals.nodeSizeMultiplier;
+      scale.set(nodeScale, nodeScale, nodeScale);
+
+      matrix.compose(position, quaternion, scale);
+      this.nodeInstancedMesh.setMatrixAt(i, matrix);
+    }
+
+    this.nodeInstancedMesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(this.nodeInstancedMesh);
   }
 
   private createEdgeLines(nodes: GraphNode[], edges: GraphEdge[]): void {
@@ -255,13 +335,15 @@ export class AncestralWebRenderer {
     const primary = new THREE.Color(this.config.visuals.colorPrimary);
     const secondary = new THREE.Color(this.config.visuals.colorSecondary);
 
+    // Reduce curve resolution for large graphs
+    const curvePoints = nodes.length > 500 ? 20 : nodes.length > 200 ? 30 : 50;
+
     for (const edge of edges) {
       const source = nodeMap.get(edge.sourceId);
       const target = nodeMap.get(edge.targetId);
 
       if (!source || !target) continue;
 
-      // Create curved path using CatmullRom
       const start = new THREE.Vector3(
         source.position.x,
         source.position.y,
@@ -273,7 +355,6 @@ export class AncestralWebRenderer {
         target.position.z
       );
 
-      // Control point for curve
       const mid = new THREE.Vector3()
         .addVectors(start, end)
         .multiplyScalar(0.5);
@@ -287,9 +368,8 @@ export class AncestralWebRenderer {
       mid.add(perpendicular);
 
       const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
-      const points = curve.getPoints(50);
+      const points = curve.getPoints(curvePoints);
 
-      // Create geometry with progress attribute
       const positions = new Float32Array(points.length * 3);
       const progress = new Float32Array(points.length);
 
@@ -328,11 +408,13 @@ export class AncestralWebRenderer {
   }
 
   private createNodeParticles(nodes: GraphNode[]): void {
-    // Calculate total particle count based on biography weights
+    // Reduce particle count for large graphs
+    const particleMultiplier = nodes.length > 500 ? 0.1 : nodes.length > 200 ? 0.2 : 0.3;
+
     let totalParticles = 0;
     for (const node of nodes) {
       const count = Math.floor(
-        5 + node.biographyWeight * 20 * this.config.visuals.particleDensity
+        5 + node.biographyWeight * 20 * particleMultiplier
       );
       totalParticles += count;
     }
@@ -345,11 +427,10 @@ export class AncestralWebRenderer {
     let index = 0;
     for (const node of nodes) {
       const count = Math.floor(
-        5 + node.biographyWeight * 20 * this.config.visuals.particleDensity
+        5 + node.biographyWeight * 20 * particleMultiplier
       );
 
       for (let i = 0; i < count; i++) {
-        // Particles orbit around node
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(Math.random() * 2 - 1);
         const r = 3 + Math.random() * 8 * (1 + node.biographyWeight);
@@ -363,7 +444,6 @@ export class AncestralWebRenderer {
         phases[index] = Math.random();
         speeds[index] = 0.3 + Math.random() * 0.5;
 
-        // Color based on node generation
         const hue = 0.5 + (node.generation * 0.05 + Math.random() * 0.1);
         const sat = 0.7 + node.biographyWeight * 0.3;
         const color = new THREE.Color().setHSL(hue, sat, 0.6);
@@ -405,33 +485,46 @@ export class AncestralWebRenderer {
   }
 
   /**
-   * Check for hover intersections
+   * Set click callback
+   */
+  onClick(callback: ClickCallback): void {
+    this.onClickCallback = callback;
+  }
+
+  /**
+   * Check for hover intersections with instanced mesh
    */
   private updateHover(): void {
+    if (!this.nodeInstancedMesh || this.nodeData.length === 0) return;
+
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    const meshes = Array.from(this.nodeMeshes.values());
-    const intersects = this.raycaster.intersectObjects(meshes);
+    const intersects = this.raycaster.intersectObject(this.nodeInstancedMesh);
 
     if (intersects.length > 0) {
-      const mesh = intersects[0].object as THREE.Mesh;
-      const node = mesh.userData.node as GraphNode;
+      const instanceId = intersects[0].instanceId;
+      if (instanceId !== undefined && instanceId < this.nodeData.length) {
+        const node = this.nodeData[instanceId];
 
-      if (this.hoveredNode !== node) {
-        this.hoveredNode = node;
+        if (this.hoveredNode !== node) {
+          this.hoveredNode = node;
 
-        // Calculate screen position
-        const vector = new THREE.Vector3();
-        vector.setFromMatrixPosition(mesh.matrixWorld);
-        vector.project(this.camera);
+          // Calculate screen position
+          const vector = new THREE.Vector3(
+            node.position.x,
+            node.position.y,
+            node.position.z
+          );
+          vector.project(this.camera);
 
-        const screenPos = {
-          x: (vector.x * 0.5 + 0.5) * window.innerWidth,
-          y: (-vector.y * 0.5 + 0.5) * window.innerHeight,
-        };
+          const screenPos = {
+            x: (vector.x * 0.5 + 0.5) * window.innerWidth,
+            y: (-vector.y * 0.5 + 0.5) * window.innerHeight,
+          };
 
-        if (this.onHoverCallback) {
-          this.onHoverCallback(node.person, screenPos);
+          if (this.onHoverCallback) {
+            this.onHoverCallback(node.person, screenPos);
+          }
         }
       }
     } else if (this.hoveredNode) {
@@ -451,11 +544,12 @@ export class AncestralWebRenderer {
 
       const time = this.clock.getElapsedTime();
 
-      // Update shader uniforms
-      for (const uniforms of this.nodeUniforms.values()) {
-        uniforms.uTime.value = time;
+      // Update instanced mesh uniforms
+      if (this.nodeUniforms) {
+        this.nodeUniforms.uTime.value = time;
       }
 
+      // Update edge uniforms
       for (const line of this.edgeLines) {
         const material = line.material as THREE.ShaderMaterial;
         material.uniforms.uTime.value = time;
@@ -471,6 +565,9 @@ export class AncestralWebRenderer {
           .material as THREE.ShaderMaterial;
         material.uniforms.uTime.value = time;
       }
+
+      // Update camera animation (smooth fly-to)
+      this.updateCameraAnimation();
 
       // Update hover
       this.updateHover();
@@ -524,12 +621,52 @@ export class AncestralWebRenderer {
   }
 
   /**
-   * Focus camera on a specific node
+   * Update camera animation
+   */
+  private updateCameraAnimation(): void {
+    if (!this.cameraAnimation) return;
+
+    const elapsed = this.clock.getElapsedTime() * 1000; // Convert to ms
+    const anim = this.cameraAnimation;
+    const progress = Math.min((elapsed - anim.startTime) / anim.duration, 1);
+
+    // Use easeInOutCubic for smooth flight
+    const easedProgress = easeInOutCubic(progress);
+
+    // Interpolate camera position
+    this.camera.position.lerpVectors(
+      anim.startPosition,
+      anim.endPosition,
+      easedProgress
+    );
+
+    // Interpolate orbit target
+    this.controls.target.lerpVectors(
+      anim.startTarget,
+      anim.endTarget,
+      easedProgress
+    );
+
+    // Animation complete
+    if (progress >= 1) {
+      if (anim.onComplete) {
+        anim.onComplete();
+      }
+      this.cameraAnimation = null;
+    }
+  }
+
+  /**
+   * Focus camera on a specific node (instant, no animation)
    */
   focusOnNode(nodeId: string): void {
-    const mesh = this.nodeMeshes.get(nodeId);
-    if (mesh) {
-      const target = mesh.position.clone();
+    const node = this.nodeData.find(n => n.id === nodeId);
+    if (node) {
+      const target = new THREE.Vector3(
+        node.position.x,
+        node.position.y,
+        node.position.z
+      );
       this.controls.target.copy(target);
       this.camera.position.set(
         target.x + 30,
@@ -537,5 +674,64 @@ export class AncestralWebRenderer {
         target.z + 50
       );
     }
+  }
+
+  /**
+   * Fly camera smoothly to a specific node
+   */
+  flyToNode(nodeId: string, duration: number = 1200, onComplete?: () => void): void {
+    const node = this.nodeData.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const targetPoint = new THREE.Vector3(
+      node.position.x,
+      node.position.y,
+      node.position.z
+    );
+
+    // Calculate camera end position - orbit around the target
+    // Consider current camera direction to make a smooth arc
+    const currentDirection = new THREE.Vector3()
+      .subVectors(this.camera.position, this.controls.target)
+      .normalize();
+
+    // Ideal viewing distance based on node importance
+    const viewDistance = 40 + node.biographyWeight * 20;
+
+    // Position camera with some offset for better view
+    const endPosition = new THREE.Vector3(
+      targetPoint.x + currentDirection.x * viewDistance,
+      targetPoint.y + Math.max(currentDirection.y * viewDistance, viewDistance * 0.3),
+      targetPoint.z + currentDirection.z * viewDistance
+    );
+
+    // Start animation
+    this.cameraAnimation = {
+      startPosition: this.camera.position.clone(),
+      endPosition: endPosition,
+      startTarget: this.controls.target.clone(),
+      endTarget: targetPoint,
+      startTime: this.clock.getElapsedTime() * 1000,
+      duration: duration,
+      onComplete: onComplete,
+    };
+  }
+
+  /**
+   * Get all nodes data for external search
+   */
+  getNodeData(): GraphNode[] {
+    return this.nodeData;
+  }
+
+  /**
+   * Search nodes by name (case-insensitive)
+   */
+  searchNodes(query: string): GraphNode[] {
+    if (!query.trim()) return [];
+    const lowerQuery = query.toLowerCase();
+    return this.nodeData.filter(node =>
+      node.person.name.toLowerCase().includes(lowerQuery)
+    );
   }
 }
