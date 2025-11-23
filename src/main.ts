@@ -1,0 +1,421 @@
+/**
+ * Ancestral Web Engine - Main Entry Point
+ * A 3D visualization of family trees with bioluminescent ethereal aesthetics
+ */
+
+import { parseFamily, validateFamilyData } from './parser';
+import { FamilyGraph } from './graph';
+import { ForceDirectedLayout } from './core';
+import { AncestralWebRenderer } from './renderer';
+import { DEFAULT_CONFIG } from './types';
+import { generateFamilyWithNodeCount, generateLargeFamily } from './utils';
+import type { Person, FamilyData } from './types';
+
+// Extend window for global access
+declare global {
+  interface Window {
+    ancestralWeb: AncestralWebApp | null;
+  }
+}
+
+// Sample family data embedded for initial demo
+const sampleFamilyYaml = `
+meta:
+  title: "The Stellar Family Tree"
+  centeredPersonId: "alex"
+
+people:
+  - id: ggp1
+    name: "Wilhelm Stellar"
+    birthDate: "1880-03-12"
+    deathDate: "1965-08-20"
+    biography: |
+      Wilhelm was a pioneering astronomer who made significant contributions to stellar evolution.
+      His work on variable stars laid the foundation for modern astrophysics.
+    childIds: [gp1, gp_aunt1]
+
+  - id: ggp2
+    name: "Helena Stellar"
+    birthDate: "1885-07-04"
+    deathDate: "1970-12-15"
+    spouseIds: [ggp1]
+    childIds: [gp1, gp_aunt1]
+    biography: "Helena was a mathematician."
+
+  - id: gp1
+    name: "Edmund Stellar"
+    birthDate: "1910-05-22"
+    deathDate: "1995-03-10"
+    parentIds: [ggp1, ggp2]
+    childIds: [parent1, uncle1]
+    biography: |
+      Edmund continued his father's legacy as director of the family observatory.
+      He specialized in solar physics and predicted solar flare activity.
+
+  - id: gp2
+    name: "Margaret Lunar"
+    birthDate: "1915-09-14"
+    deathDate: "2000-06-28"
+    spouseIds: [gp1]
+    childIds: [parent1, uncle1]
+
+  - id: gp_aunt1
+    name: "Celeste Stellar"
+    birthDate: "1912-11-03"
+    deathDate: "1998-04-17"
+    parentIds: [ggp1, ggp2]
+    childIds: [cousin_parent1]
+    biography: "Celeste was the family artist, known for astronomical illustrations."
+
+  - id: gp3
+    name: "Robert Nova"
+    birthDate: "1908-02-28"
+    deathDate: "1990-10-05"
+    childIds: [parent2]
+
+  - id: gp4
+    name: "Elizabeth Nova"
+    birthDate: "1912-08-19"
+    spouseIds: [gp3]
+    childIds: [parent2]
+
+  - id: parent1
+    name: "James Stellar"
+    birthDate: "1945-04-15"
+    parentIds: [gp1, gp2]
+    spouseIds: [parent2]
+    childIds: [alex, sibling1, sibling2]
+    biography: |
+      James is a renowned physicist specializing in quantum mechanics.
+      His groundbreaking work on quantum entanglement earned him the Nobel Prize in 2010.
+
+  - id: parent2
+    name: "Sarah Nova-Stellar"
+    birthDate: "1948-07-22"
+    parentIds: [gp3, gp4]
+    spouseIds: [parent1]
+    childIds: [alex, sibling1, sibling2]
+
+  - id: uncle1
+    name: "Thomas Stellar"
+    birthDate: "1942-12-01"
+    parentIds: [gp1, gp2]
+    childIds: [cousin1, cousin2]
+
+  - id: cousin_parent1
+    name: "Diana Stellar-Moon"
+    birthDate: "1940-06-30"
+    parentIds: [gp_aunt1]
+    childIds: [second_cousin1]
+    biography: "Diana became a science fiction author inspired by her astronomical heritage."
+
+  - id: alex
+    name: "Alex Stellar"
+    birthDate: "1980-01-15"
+    parentIds: [parent1, parent2]
+    spouseIds: [alex_spouse]
+    childIds: [child1, child2]
+    biography: |
+      Alex is the central figure of this family web, a software engineer and data artist
+      who combines the family's scientific legacy with modern technology. They created
+      this ancestral web visualization as a tribute to their rich heritage.
+
+      Growing up surrounded by scientists and artists, Alex developed a unique perspective
+      bridging technical and creative worlds. Their work has been featured at Transmediale
+      and Ars Electronica.
+
+  - id: alex_spouse
+    name: "Jordan Rivers"
+    birthDate: "1982-03-20"
+    spouseIds: [alex]
+    childIds: [child1, child2]
+    biography: "Jordan is a marine biologist studying bioluminescent organisms."
+
+  - id: sibling1
+    name: "Maya Stellar"
+    birthDate: "1978-08-10"
+    parentIds: [parent1, parent2]
+    childIds: [niece1]
+    biography: "Maya is an architect specializing in sustainable observatory design."
+
+  - id: sibling2
+    name: "Leo Stellar"
+    birthDate: "1985-11-25"
+    parentIds: [parent1, parent2]
+
+  - id: cousin1
+    name: "Nova Stellar"
+    birthDate: "1975-04-12"
+    parentIds: [uncle1]
+    childIds: [cousin_child1]
+    biography: |
+      Nova became an expert on supernova events. Her research has identified
+      several potential supernova candidates in our galaxy.
+
+  - id: cousin2
+    name: "Orion Stellar"
+    birthDate: "1979-09-08"
+    parentIds: [uncle1]
+
+  - id: second_cousin1
+    name: "Luna Moon"
+    birthDate: "1970-02-14"
+    parentIds: [cousin_parent1]
+    childIds: [second_cousin_child1]
+    biography: "Luna became a planetarium director, bringing astronomy to the public."
+
+  - id: child1
+    name: "Stella Stellar"
+    birthDate: "2010-07-04"
+    parentIds: [alex, alex_spouse]
+    biography: "Stella shows early aptitude for both coding and marine biology."
+
+  - id: child2
+    name: "Cosmo Stellar"
+    birthDate: "2015-12-21"
+    parentIds: [alex, alex_spouse]
+
+  - id: niece1
+    name: "Aurora Stellar"
+    birthDate: "2008-03-17"
+    parentIds: [sibling1]
+    biography: "Aurora dreams of becoming the first person to walk on Mars."
+
+  - id: cousin_child1
+    name: "Vega Stellar"
+    birthDate: "2005-06-15"
+    parentIds: [cousin1]
+
+  - id: second_cousin_child1
+    name: "Eclipse Moon"
+    birthDate: "2000-08-11"
+    parentIds: [second_cousin1]
+    biography: |
+      Born during a total solar eclipse, Eclipse has embraced their celestial name
+      by becoming an eclipse chaser and astrophotographer. They have witnessed
+      15 total solar eclipses across 6 continents.
+`;
+
+/**
+ * Main application class
+ */
+class AncestralWebApp {
+  private renderer: AncestralWebRenderer | null = null;
+  private graph: FamilyGraph | null = null;
+  private container: HTMLElement | null = null;
+
+  constructor() {
+    this.init();
+    this.setupKeyboardControls();
+  }
+
+  private setupKeyboardControls(): void {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'r' || e.key === 'R') {
+        this.resetView();
+      }
+    });
+  }
+
+  private async init(): Promise<void> {
+    this.container = document.getElementById('canvas-container');
+    if (!this.container) {
+      console.error('Canvas container not found');
+      return;
+    }
+
+    // Load default family
+    const familyData = parseFamily(sampleFamilyYaml);
+    await this.loadFamily(familyData);
+  }
+
+  private showLoading(): void {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'flex';
+  }
+
+  private hideLoading(): void {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
+  }
+
+  private updateStats(nodeCount: number, edgeCount: number, title: string): void {
+    const titleEl = document.getElementById('family-title');
+    const statsEl = document.getElementById('stats');
+
+    if (titleEl) titleEl.textContent = title;
+    if (statsEl) statsEl.textContent = `${nodeCount} members • ${edgeCount} connections`;
+  }
+
+  async loadFamily(familyData: FamilyData): Promise<void> {
+    if (!this.container) return;
+
+    this.showLoading();
+
+    // Small delay to let loading UI show
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    try {
+      // Validate
+      const errors = validateFamilyData(familyData);
+      if (errors.length > 0) {
+        console.error('Family data validation errors:', errors);
+        return;
+      }
+
+      // Dispose previous renderer
+      if (this.renderer) {
+        this.renderer.dispose();
+      }
+
+      // Build graph
+      this.graph = new FamilyGraph(familyData);
+
+      // Calculate layout
+      const layout = new ForceDirectedLayout(DEFAULT_CONFIG.layout);
+      const nodes = this.graph.getNodesArray();
+
+      // Calculate layout
+      layout.calculate(nodes, this.graph.edges, this.graph.centeredId);
+
+      // Create renderer
+      this.renderer = new AncestralWebRenderer(this.container, DEFAULT_CONFIG);
+
+      // Setup hover callback
+      this.renderer.onHover((person, _screenPos) => {
+        this.updateInfoPanel(person);
+      });
+
+      // Render the graph
+      this.renderer.renderGraph(nodes, this.graph.edges);
+
+      // Start animation
+      this.renderer.start();
+
+      // Focus on centered person
+      this.renderer.focusOnNode(this.graph.centeredId);
+
+      // Update UI
+      this.updateStats(
+        nodes.length,
+        this.graph.edges.length,
+        familyData.meta?.title || 'Ancestral Web'
+      );
+
+      console.log(`Ancestral Web loaded: ${nodes.length} nodes, ${this.graph.edges.length} edges`);
+    } catch (error) {
+      console.error('Failed to load family:', error);
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  // Public methods for UI buttons
+  async loadSmallFamily(): Promise<void> {
+    const familyData = generateLargeFamily({
+      generations: 3,
+      avgChildrenPerCouple: 2,
+      biographyProbability: 0.4,
+    });
+    await this.loadFamily(familyData);
+  }
+
+  async loadMediumFamily(): Promise<void> {
+    const familyData = generateFamilyWithNodeCount(100);
+    await this.loadFamily(familyData);
+  }
+
+  async loadLargeFamily(): Promise<void> {
+    const familyData = generateFamilyWithNodeCount(500);
+    await this.loadFamily(familyData);
+  }
+
+  async loadHugeFamily(): Promise<void> {
+    const familyData = generateFamilyWithNodeCount(1000);
+    await this.loadFamily(familyData);
+  }
+
+  async loadYamlFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+
+    const file = input.files[0];
+    try {
+      const text = await file.text();
+      const familyData = parseFamily(text);
+      await this.loadFamily(familyData);
+    } catch (error) {
+      console.error('Failed to load YAML file:', error);
+      alert('Failed to load YAML file. Please check the format.');
+    }
+
+    // Reset input for re-selection of same file
+    input.value = '';
+  }
+
+  resetView(): void {
+    if (this.renderer && this.graph) {
+      this.renderer.focusOnNode(this.graph.centeredId);
+    }
+  }
+
+  private updateInfoPanel(person: Person | null): void {
+    const panel = document.getElementById('info-panel');
+    const nameEl = document.getElementById('person-name');
+    const datesEl = document.getElementById('person-dates');
+    const bioEl = document.getElementById('person-bio');
+    const relationsEl = document.getElementById('person-relations');
+
+    if (!panel || !nameEl || !datesEl || !bioEl || !relationsEl) return;
+
+    if (person) {
+      nameEl.textContent = person.name;
+
+      // Format dates
+      let dates = '';
+      if (person.birthDate) {
+        dates = person.birthDate;
+        if (person.deathDate) {
+          dates += ' — ' + person.deathDate;
+        } else {
+          dates += ' — present';
+        }
+      }
+      datesEl.textContent = dates;
+
+      bioEl.textContent = person.biography || 'No biography available.';
+
+      // Get relations
+      if (this.graph) {
+        const relatives = this.graph.getRelatives(person.id);
+        const relativeNames = relatives
+          .slice(0, 5) // Limit for UI
+          .map((id) => this.graph?.nodes.get(id)?.person.name)
+          .filter(Boolean);
+
+        const moreCount = relatives.length - 5;
+        let relText = relativeNames.length > 0
+          ? `Connected to: ${relativeNames.join(', ')}`
+          : '';
+
+        if (moreCount > 0) {
+          relText += ` and ${moreCount} more`;
+        }
+
+        relationsEl.textContent = relText;
+      }
+
+      panel.classList.add('visible');
+    } else {
+      panel.classList.remove('visible');
+    }
+  }
+}
+
+// Initialize app when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  window.ancestralWeb = new AncestralWebApp();
+});
+
+// Also export for external use
+export { AncestralWebApp, parseFamily, FamilyGraph, ForceDirectedLayout, AncestralWebRenderer };

@@ -1,0 +1,189 @@
+# Sample Ancestral Web - 4 Generations
+# Demonstrates complex family relationships including cousins
+
+meta:
+  title: "The Stellar Family Tree"
+  centeredPersonId: "alex"
+  description: "A multi-generational family web demonstrating ancestor and descendant connections"
+
+people:
+  # Generation -3 (Great-grandparents)
+  - id: ggp1
+    name: "Wilhelm Stellar"
+    birthDate: "1880-03-12"
+    deathDate: "1965-08-20"
+    biography: |
+      Wilhelm was a pioneering astronomer who made significant contributions to our understanding
+      of stellar evolution. His work on variable stars laid the foundation for modern astrophysics.
+      He established the Stellar Observatory in 1915 and trained generations of astronomers.
+    childIds: [gp1, gp_aunt1]
+
+  - id: ggp2
+    name: "Helena Stellar"
+    birthDate: "1885-07-04"
+    deathDate: "1970-12-15"
+    spouseIds: [ggp1]
+    childIds: [gp1, gp_aunt1]
+    biography: "Helena was a mathematician whose calculations supported her husband's astronomical work."
+
+  # Generation -2 (Grandparents)
+  - id: gp1
+    name: "Edmund Stellar"
+    birthDate: "1910-05-22"
+    deathDate: "1995-03-10"
+    parentIds: [ggp1, ggp2]
+    childIds: [parent1, uncle1]
+    biography: |
+      Edmund continued his father's legacy, becoming the director of the family observatory.
+      He specialized in solar physics and was instrumental in predicting solar flare activity.
+      His research helped protect early satellite systems from solar radiation.
+
+  - id: gp2
+    name: "Margaret Lunar"
+    birthDate: "1915-09-14"
+    deathDate: "2000-06-28"
+    spouseIds: [gp1]
+    childIds: [parent1, uncle1]
+    biography: "Margaret was a botanist who discovered three new species of high-altitude plants."
+
+  - id: gp_aunt1
+    name: "Celeste Stellar"
+    birthDate: "1912-11-03"
+    deathDate: "1998-04-17"
+    parentIds: [ggp1, ggp2]
+    childIds: [cousin_parent1]
+    biography: "Celeste was the family artist, known for her astronomical illustrations."
+
+  - id: gp3
+    name: "Robert Nova"
+    birthDate: "1908-02-28"
+    deathDate: "1990-10-05"
+    childIds: [parent2]
+
+  - id: gp4
+    name: "Elizabeth Nova"
+    birthDate: "1912-08-19"
+    deathDate: "1999-01-30"
+    spouseIds: [gp3]
+    childIds: [parent2]
+
+  # Generation -1 (Parents, Aunts, Uncles)
+  - id: parent1
+    name: "James Stellar"
+    birthDate: "1945-04-15"
+    parentIds: [gp1, gp2]
+    spouseIds: [parent2]
+    childIds: [alex, sibling1, sibling2]
+    biography: |
+      James is a renowned physicist specializing in quantum mechanics. His groundbreaking work
+      on quantum entanglement has applications in secure communications and computing.
+      He received the Nobel Prize in Physics in 2010 for his contributions to the field.
+
+  - id: parent2
+    name: "Sarah Nova-Stellar"
+    birthDate: "1948-07-22"
+    parentIds: [gp3, gp4]
+    spouseIds: [parent1]
+    childIds: [alex, sibling1, sibling2]
+    biography: "Sarah is a neuroscientist who studies the connection between music and memory."
+
+  - id: uncle1
+    name: "Thomas Stellar"
+    birthDate: "1942-12-01"
+    parentIds: [gp1, gp2]
+    childIds: [cousin1, cousin2]
+
+  - id: cousin_parent1
+    name: "Diana Stellar-Moon"
+    birthDate: "1940-06-30"
+    parentIds: [gp_aunt1]
+    childIds: [second_cousin1]
+    biography: "Diana became a famous science fiction author, inspired by her family's astronomical heritage."
+
+  # Generation 0 (Self, Siblings, Cousins)
+  - id: alex
+    name: "Alex Stellar"
+    birthDate: "1980-01-15"
+    parentIds: [parent1, parent2]
+    spouseIds: [alex_spouse]
+    childIds: [child1, child2]
+    biography: |
+      Alex is the central figure of this family web, a software engineer and data visualization
+      artist who combines the family's scientific legacy with modern technology. They created
+      this very ancestral web visualization system as a tribute to their rich heritage.
+
+      Growing up surrounded by scientists and artists, Alex developed a unique perspective
+      that bridges the technical and creative worlds. Their work has been featured at
+      international digital art festivals including Transmediale and Ars Electronica.
+
+  - id: alex_spouse
+    name: "Jordan Rivers"
+    birthDate: "1982-03-20"
+    spouseIds: [alex]
+    childIds: [child1, child2]
+    biography: "Jordan is a marine biologist studying bioluminescent organisms."
+
+  - id: sibling1
+    name: "Maya Stellar"
+    birthDate: "1978-08-10"
+    parentIds: [parent1, parent2]
+    childIds: [niece1]
+    biography: "Maya is an architect specializing in sustainable observatory design."
+
+  - id: sibling2
+    name: "Leo Stellar"
+    birthDate: "1985-11-25"
+    parentIds: [parent1, parent2]
+
+  - id: cousin1
+    name: "Nova Stellar"
+    birthDate: "1975-04-12"
+    parentIds: [uncle1]
+    childIds: [cousin_child1]
+    biography: |
+      Nova took her name literally and became an expert on supernova events.
+      Her research has identified several potential supernova candidates in our galaxy.
+
+  - id: cousin2
+    name: "Orion Stellar"
+    birthDate: "1979-09-08"
+    parentIds: [uncle1]
+
+  - id: second_cousin1
+    name: "Luna Moon"
+    birthDate: "1970-02-14"
+    parentIds: [cousin_parent1]
+    childIds: [second_cousin_child1]
+    biography: "Luna became a planetarium director, bringing astronomy to the public."
+
+  # Generation +1 (Children, Nieces/Nephews)
+  - id: child1
+    name: "Stella Stellar"
+    birthDate: "2010-07-04"
+    parentIds: [alex, alex_spouse]
+    biography: "Stella is showing early aptitude for both coding and marine biology."
+
+  - id: child2
+    name: "Cosmo Stellar"
+    birthDate: "2015-12-21"
+    parentIds: [alex, alex_spouse]
+
+  - id: niece1
+    name: "Aurora Stellar"
+    birthDate: "2008-03-17"
+    parentIds: [sibling1]
+    biography: "Aurora dreams of becoming the first person to walk on Mars."
+
+  - id: cousin_child1
+    name: "Vega Stellar"
+    birthDate: "2005-06-15"
+    parentIds: [cousin1]
+
+  - id: second_cousin_child1
+    name: "Eclipse Moon"
+    birthDate: "2000-08-11"
+    parentIds: [second_cousin1]
+    biography: |
+      Born during a total solar eclipse, Eclipse has embraced their celestial name
+      by becoming an eclipse chaser and astrophotographer. They have witnessed
+      15 total solar eclipses across 6 continents.

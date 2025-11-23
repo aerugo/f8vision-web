@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ancestral Web - 3D Family Visualization</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      #app {
+        width: 100%;
+        height: 100%;
+        position: relative;
+      }
+
+      #canvas-container {
+        width: 100%;
+        height: 100%;
+      }
+
+      #title-panel {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: #80d4ff;
+        text-shadow: 0 0 20px rgba(128, 212, 255, 0.5);
+      }
+
+      #title-panel h1 {
+        font-size: 1.5em;
+        font-weight: 300;
+        letter-spacing: 0.1em;
+        margin-bottom: 8px;
+      }
+
+      #title-panel .stats {
+        font-size: 0.75em;
+        color: #607890;
+      }
+
+      #control-panel {
+        position: absolute;
+        top: 80px;
+        left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      #control-panel button {
+        background: rgba(64, 128, 255, 0.15);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        color: #80d4ff;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.8em;
+        transition: all 0.2s ease;
+        backdrop-filter: blur(5px);
+      }
+
+      #control-panel button:hover {
+        background: rgba(64, 128, 255, 0.3);
+        border-color: rgba(100, 180, 255, 0.5);
+        box-shadow: 0 0 15px rgba(80, 150, 255, 0.3);
+      }
+
+      .file-input-label {
+        display: block;
+        background: rgba(64, 128, 255, 0.15);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        color: #80d4ff;
+        padding: 10px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.8em;
+        text-align: center;
+        transition: all 0.2s ease;
+        backdrop-filter: blur(5px);
+        margin-bottom: 10px;
+      }
+
+      .file-input-label:hover {
+        background: rgba(64, 128, 255, 0.3);
+        border-color: rgba(100, 180, 255, 0.5);
+        box-shadow: 0 0 15px rgba(80, 150, 255, 0.3);
+      }
+
+      .file-input-label input[type="file"] {
+        display: none;
+      }
+
+      .button-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      .button-group button {
+        font-size: 0.7em;
+        padding: 6px 8px;
+      }
+
+      #info-panel {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        max-width: 320px;
+        background: rgba(10, 15, 30, 0.85);
+        border: 1px solid rgba(100, 180, 255, 0.3);
+        border-radius: 12px;
+        padding: 20px;
+        color: #e0f0ff;
+        backdrop-filter: blur(10px);
+        opacity: 0;
+        transform: translateX(20px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        pointer-events: none;
+        box-shadow:
+          0 0 30px rgba(80, 150, 255, 0.2),
+          inset 0 0 20px rgba(80, 150, 255, 0.05);
+      }
+
+      #info-panel.visible {
+        opacity: 1;
+        transform: translateX(0);
+        pointer-events: auto;
+      }
+
+      #info-panel h2 {
+        font-size: 1.4em;
+        margin-bottom: 10px;
+        color: #80d4ff;
+        text-shadow: 0 0 10px rgba(128, 212, 255, 0.5);
+      }
+
+      #info-panel .dates {
+        font-size: 0.9em;
+        color: #8ab4d4;
+        margin-bottom: 15px;
+      }
+
+      #info-panel .biography {
+        font-size: 0.85em;
+        line-height: 1.6;
+        color: #c0d8e8;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      #info-panel .biography::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #info-panel .biography::-webkit-scrollbar-track {
+        background: rgba(80, 150, 255, 0.1);
+        border-radius: 3px;
+      }
+
+      #info-panel .biography::-webkit-scrollbar-thumb {
+        background: rgba(80, 150, 255, 0.3);
+        border-radius: 3px;
+      }
+
+      #info-panel .relations {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid rgba(100, 180, 255, 0.2);
+        font-size: 0.8em;
+        color: #7090a0;
+      }
+
+      #loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #80d4ff;
+        font-size: 1.2em;
+        text-shadow: 0 0 20px rgba(128, 212, 255, 0.8);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+      }
+
+      #loading .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(128, 212, 255, 0.2);
+        border-top-color: #80d4ff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      #controls {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        color: #506070;
+        font-size: 0.75em;
+        line-height: 1.8;
+      }
+
+      .control-hint {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .key {
+        background: rgba(80, 150, 255, 0.1);
+        border: 1px solid rgba(80, 150, 255, 0.2);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: monospace;
+        font-size: 0.9em;
+      }
+
+      /* Vignette overlay */
+      #vignette {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 5, 15, 0.5) 100%);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="canvas-container"></div>
+      <div id="vignette"></div>
+
+      <div id="title-panel">
+        <h1 id="family-title">Ancestral Web</h1>
+        <div class="stats" id="stats">Loading...</div>
+      </div>
+
+      <div id="control-panel">
+        <label class="file-input-label">
+          <input type="file" id="yaml-file" accept=".yaml,.yml" onchange="window.ancestralWeb?.loadYamlFile(event)" />
+          Load YAML File
+        </label>
+        <div class="button-group">
+          <button onclick="window.ancestralWeb?.loadSmallFamily()">Small</button>
+          <button onclick="window.ancestralWeb?.loadMediumFamily()">Medium</button>
+          <button onclick="window.ancestralWeb?.loadLargeFamily()">Large</button>
+          <button onclick="window.ancestralWeb?.loadHugeFamily()">Huge</button>
+        </div>
+      </div>
+
+      <div id="info-panel">
+        <h2 id="person-name"></h2>
+        <div class="dates" id="person-dates"></div>
+        <div class="biography" id="person-bio"></div>
+        <div class="relations" id="person-relations"></div>
+      </div>
+
+      <div id="loading">
+        <div class="spinner"></div>
+        <span>Weaving ancestral threads...</span>
+      </div>
+
+      <div id="controls">
+        <div class="control-hint"><span class="key">Drag</span> Rotate view</div>
+        <div class="control-hint"><span class="key">Scroll</span> Zoom in/out</div>
+        <div class="control-hint"><span class="key">Hover</span> View details</div>
+        <div class="control-hint"><span class="key">R</span> Reset view</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
