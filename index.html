@@ -125,6 +125,8 @@
         top: 20px;
         right: 20px;
         max-width: 320px;
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
         background: rgba(10, 15, 30, 0.85);
         border: 1px solid rgba(100, 180, 255, 0.3);
         border-radius: 12px;
@@ -138,6 +140,24 @@
         box-shadow:
           0 0 30px rgba(80, 150, 255, 0.2),
           inset 0 0 20px rgba(80, 150, 255, 0.05);
+      }
+
+      #info-panel::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #info-panel::-webkit-scrollbar-track {
+        background: rgba(80, 150, 255, 0.1);
+        border-radius: 3px;
+      }
+
+      #info-panel::-webkit-scrollbar-thumb {
+        background: rgba(80, 150, 255, 0.3);
+        border-radius: 3px;
+      }
+
+      #info-panel::-webkit-scrollbar-thumb:hover {
+        background: rgba(80, 150, 255, 0.5);
       }
 
       #info-panel.visible {
