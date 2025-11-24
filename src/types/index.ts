@@ -7,13 +7,42 @@ export interface Person {
   name: string;
   birthDate?: string;
   deathDate?: string;
+  birthPlace?: string;
+  deathPlace?: string;
   biography?: string;
+  nickname?: string;
+  maidenName?: string;
+  gender?: 'male' | 'female' | 'other';
+  status?: 'complete' | 'pending' | 'queued';
   // Family relationships
   parentIds?: string[];
   spouseIds?: string[];
   childIds?: string[];
+  // Event and note references (populated during parsing)
+  eventIds?: string[];
+  noteIds?: string[];
   // Computed at runtime
   generation?: number;
+}
+
+export interface GenealogyEvent {
+  id: string;
+  eventType: string;
+  eventDate?: string;
+  eventYear?: number;
+  location?: string;
+  description?: string;
+  primaryPersonId: string;
+  // Computed: other people who share this exact event (by description/date/location match)
+  sharedWithPersonIds?: string[];
+}
+
+export interface PersonNote {
+  id: string;
+  personId: string;
+  category?: string;
+  content: string;
+  source?: string;
 }
 
 export interface FamilyData {
@@ -21,8 +50,14 @@ export interface FamilyData {
     title?: string;
     centeredPersonId?: string;
     description?: string;
+    exportedAt?: string;
+    version?: string;
+    format?: string;
+    truncated?: number;
   };
   people: Person[];
+  events?: GenealogyEvent[];
+  notes?: PersonNote[];
 }
 
 export interface GraphNode {
@@ -33,6 +68,9 @@ export interface GraphNode {
   generation: number;
   biographyWeight: number; // 0-1, derived from biography length
   connections: string[];
+  // Event data for firefly rendering
+  events?: GenealogyEvent[];
+  eventCount: number;
 }
 
 export interface GraphEdge {

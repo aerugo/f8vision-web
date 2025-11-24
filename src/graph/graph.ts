@@ -1,4 +1,4 @@
-import type { FamilyData, GraphNode, GraphEdge } from '../types';
+import type { FamilyData, GraphNode, GraphEdge, GenealogyEvent, PersonNote } from '../types';
 import { calculateBiographyWeight } from '../parser';
 
 /**
@@ -9,16 +9,76 @@ export class FamilyGraph {
   public nodes: Map<string, GraphNode> = new Map();
   public edges: GraphEdge[] = [];
   public centeredId: string;
+  public events: Map<string, GenealogyEvent> = new Map();
+  public notes: Map<string, PersonNote> = new Map();
+  public eventsByPerson: Map<string, GenealogyEvent[]> = new Map();
+  public notesByPerson: Map<string, PersonNote[]> = new Map();
 
   constructor(familyData: FamilyData) {
-    this.centeredId = familyData.meta?.centeredPersonId || familyData.people[0]?.id || '';
+    // Build events and notes maps first
+    this.buildEventsAndNotes(familyData);
+
+    // Determine centered person: prefer meta setting, then generation 0, then first person
+    this.centeredId = this.determineCenteredPerson(familyData);
+
     this.buildNodes(familyData);
     this.buildEdges(familyData);
     this.calculateGenerations();
   }
 
+  private determineCenteredPerson(familyData: FamilyData): string {
+    // First, check meta setting
+    if (familyData.meta?.centeredPersonId) {
+      return familyData.meta.centeredPersonId;
+    }
+
+    // For ancestral-synth format, prefer a person at generation 0 with complete status
+    const gen0Person = familyData.people.find(p =>
+      p.generation === 0 && p.status === 'complete'
+    );
+    if (gen0Person) return gen0Person.id;
+
+    // Fall back to any generation 0 person
+    const anyGen0 = familyData.people.find(p => p.generation === 0);
+    if (anyGen0) return anyGen0.id;
+
+    // Final fallback: first person
+    return familyData.people[0]?.id || '';
+  }
+
+  private buildEventsAndNotes(familyData: FamilyData): void {
+    // Build events map
+    if (familyData.events) {
+      for (const event of familyData.events) {
+        this.events.set(event.id, event);
+
+        // Map events to person
+        if (!this.eventsByPerson.has(event.primaryPersonId)) {
+          this.eventsByPerson.set(event.primaryPersonId, []);
+        }
+        this.eventsByPerson.get(event.primaryPersonId)!.push(event);
+      }
+    }
+
+    // Build notes map
+    if (familyData.notes) {
+      for (const note of familyData.notes) {
+        this.notes.set(note.id, note);
+
+        // Map notes to person
+        if (!this.notesByPerson.has(note.personId)) {
+          this.notesByPerson.set(note.personId, []);
+        }
+        this.notesByPerson.get(note.personId)!.push(note);
+      }
+    }
+  }
+
   private buildNodes(familyData: FamilyData): void {
     for (const person of familyData.people) {
+      // Get events for this person
+      const personEvents = this.eventsByPerson.get(person.id) || [];
+
       const node: GraphNode = {
         id: person.id,
         person,
@@ -27,6 +87,8 @@ export class FamilyGraph {
         generation: 0,
         biographyWeight: calculateBiographyWeight(person.biography),
         connections: [],
+        events: personEvents,
+        eventCount: personEvents.length,
       };
       this.nodes.set(person.id, node);
     }

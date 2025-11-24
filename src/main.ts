@@ -821,35 +821,204 @@ class AncestralWebApp {
     const panel = document.getElementById('info-panel');
     const nameEl = document.getElementById('person-name');
     const datesEl = document.getElementById('person-dates');
+    const detailsEl = document.getElementById('person-details');
     const bioEl = document.getElementById('person-bio');
     const relationsEl = document.getElementById('person-relations');
+    const eventsEl = document.getElementById('person-events');
+    const notesEl = document.getElementById('person-notes');
 
     if (!panel || !nameEl || !datesEl || !bioEl || !relationsEl) return;
 
     if (person) {
-      nameEl.textContent = person.name;
+      // Name with optional nickname
+      let displayName = person.name;
+      if (person.nickname) {
+        displayName += ` "${person.nickname}"`;
+      }
+      nameEl.textContent = displayName;
 
-      // Format dates
+      // Format dates with places
       let dates = '';
-      if (person.birthDate) {
-        dates = person.birthDate;
-        if (person.deathDate) {
-          dates += ' — ' + person.deathDate;
-        } else {
-          dates += ' — present';
-        }
+      if (person.birthDate || person.birthPlace) {
+        dates = `b. ${person.birthDate || '?'}`;
+        if (person.birthPlace) dates += ` (${person.birthPlace})`;
+      }
+      if (person.deathDate || person.deathPlace) {
+        if (dates) dates += ' — ';
+        dates += `d. ${person.deathDate || '?'}`;
+        if (person.deathPlace) dates += ` (${person.deathPlace})`;
+      } else if (person.birthDate && !person.deathDate) {
+        dates += ' — present';
       }
       datesEl.textContent = dates;
+
+      // Additional details (only show non-null fields)
+      if (detailsEl) {
+        const details: string[] = [];
+        if (person.maidenName) {
+          details.push(`<div class="detail-item"><span class="detail-label">Maiden name:</span><span class="detail-value">${person.maidenName}</span></div>`);
+        }
+        if (person.gender) {
+          details.push(`<div class="detail-item"><span class="detail-label">Gender:</span><span class="detail-value">${person.gender}</span></div>`);
+        }
+        if (person.status) {
+          details.push(`<div class="detail-item"><span class="detail-label">Status:</span><span class="detail-value">${person.status}</span></div>`);
+        }
+        if (person.generation !== undefined) {
+          const genLabel = person.generation === 0 ? 'Center' :
+                          person.generation > 0 ? `+${person.generation}` :
+                          `${person.generation}`;
+          details.push(`<div class="detail-item"><span class="detail-label">Generation:</span><span class="detail-value">${genLabel}</span></div>`);
+        }
+        detailsEl.innerHTML = details.join('');
+        detailsEl.style.display = details.length > 0 ? 'block' : 'none';
+      }
 
       bioEl.textContent = person.biography || 'No biography available.';
 
       // Build categorized relations
       this.renderRelations(person, relationsEl);
 
+      // Render events
+      if (eventsEl) {
+        this.renderEvents(person, eventsEl);
+      }
+
+      // Render notes
+      if (notesEl) {
+        this.renderNotes(person, notesEl);
+      }
+
       panel.classList.add('visible');
     } else {
       panel.classList.remove('visible');
     }
+  }
+
+  private renderEvents(person: Person, container: HTMLElement): void {
+    if (!this.graph) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    // Get events for this person
+    const events = this.graph.eventsByPerson.get(person.id) || [];
+    if (events.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    // Build event signature map to find shared events
+    const eventSignatures = new Map<string, string[]>(); // signature -> person IDs
+    for (const node of this.graph.nodes.values()) {
+      const nodeEvents = this.graph.eventsByPerson.get(node.id) || [];
+      for (const event of nodeEvents) {
+        const signature = [
+          event.eventType || '',
+          event.eventDate || event.eventYear?.toString() || '',
+          event.location || '',
+          event.description || ''
+        ].join('|');
+        if (!eventSignatures.has(signature)) {
+          eventSignatures.set(signature, []);
+        }
+        const ids = eventSignatures.get(signature)!;
+        if (!ids.includes(node.id)) {
+          ids.push(node.id);
+        }
+      }
+    }
+
+    let html = '<div class="events-header">Events</div>';
+
+    for (const event of events) {
+      const signature = [
+        event.eventType || '',
+        event.eventDate || event.eventYear?.toString() || '',
+        event.location || '',
+        event.description || ''
+      ].join('|');
+
+      const sharedPersonIds = (eventSignatures.get(signature) || [])
+        .filter(id => id !== person.id);
+
+      html += '<div class="event-item">';
+      html += `<div class="event-type">${event.eventType.replace(/_/g, ' ')}</div>`;
+
+      const dateStr = event.eventDate || (event.eventYear ? String(event.eventYear) : '');
+      if (dateStr) {
+        html += `<div class="event-date">${dateStr}</div>`;
+      }
+      if (event.location) {
+        html += `<div class="event-location">${event.location}</div>`;
+      }
+      if (event.description) {
+        html += `<div class="event-description">${event.description}</div>`;
+      }
+
+      // Show shared people
+      if (sharedPersonIds.length > 0) {
+        const sharedLinks = sharedPersonIds.map(id => {
+          const node = this.graph?.nodes.get(id);
+          if (!node) return '';
+          return `<span class="event-shared-link" data-person-id="${id}">${node.person.name}</span>`;
+        }).filter(Boolean).join(', ');
+
+        if (sharedLinks) {
+          html += `<div class="event-shared">Shared with: ${sharedLinks}</div>`;
+        }
+      }
+
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    container.style.display = 'block';
+
+    // Add click handlers for shared event links
+    container.querySelectorAll('.event-shared-link').forEach(item => {
+      item.addEventListener('click', () => {
+        const personId = item.getAttribute('data-person-id');
+        if (personId) {
+          this.flyToPerson(personId);
+        }
+      });
+    });
+  }
+
+  private renderNotes(person: Person, container: HTMLElement): void {
+    if (!this.graph) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    // Get notes for this person
+    const notes = this.graph.notesByPerson.get(person.id) || [];
+    if (notes.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    let html = '<div class="notes-header">Notes</div>';
+
+    for (const note of notes) {
+      html += '<div class="note-item">';
+      if (note.category) {
+        html += `<div class="note-category">${note.category}</div>`;
+      }
+      html += `<div class="note-content">${note.content}</div>`;
+      if (note.source) {
+        html += `<div class="note-source">Source: ${note.source}</div>`;
+      }
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    container.style.display = 'block';
   }
 
   private renderRelations(person: Person, container: HTMLElement): void {
