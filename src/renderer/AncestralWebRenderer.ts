@@ -9,6 +9,10 @@ import {
   edgeFragmentShader,
   particleVertexShader,
   particleFragmentShader,
+  fireflyVertexShader,
+  fireflyFragmentShader,
+  sharedEventEdgeVertexShader,
+  sharedEventEdgeFragmentShader,
 } from '../shaders';
 
 export interface HoverCallback {
@@ -53,6 +57,8 @@ export class AncestralWebRenderer {
   private edgeLines: THREE.Line[] = [];
   private particleSystem: THREE.Points | null = null;
   private backgroundParticles: THREE.Points | null = null;
+  private fireflySystem: THREE.Points | null = null;
+  private sharedEventEdges: THREE.Line[] = [];
 
   private raycaster: THREE.Raycaster;
   private mouse: THREE.Vector2;
@@ -231,6 +237,12 @@ export class AncestralWebRenderer {
     // Create node-attached particles
     this.createNodeParticles(nodes);
 
+    // Create event fireflies (orbiting particles for events)
+    this.createEventFireflies(nodes);
+
+    // Create golden edges for shared events
+    this.createSharedEventEdges(nodes);
+
     // Hide loading indicator
     const loading = document.getElementById('loading');
     if (loading) loading.style.display = 'none';
@@ -259,6 +271,20 @@ export class AncestralWebRenderer {
       (this.particleSystem.material as THREE.Material).dispose();
       this.particleSystem = null;
     }
+
+    if (this.fireflySystem) {
+      this.scene.remove(this.fireflySystem);
+      this.fireflySystem.geometry.dispose();
+      (this.fireflySystem.material as THREE.Material).dispose();
+      this.fireflySystem = null;
+    }
+
+    for (const line of this.sharedEventEdges) {
+      this.scene.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    }
+    this.sharedEventEdges = [];
   }
 
   private createInstancedNodes(nodes: GraphNode[]): void {
@@ -478,6 +504,254 @@ export class AncestralWebRenderer {
   }
 
   /**
+   * Create firefly particles for events orbiting around person orbs
+   * Each event becomes a glowing particle that orbits the person's node
+   */
+  private createEventFireflies(nodes: GraphNode[]): void {
+    // Count total events
+    let totalEvents = 0;
+    for (const node of nodes) {
+      totalEvents += node.eventCount || 0;
+    }
+
+    if (totalEvents === 0) return;
+
+    // Allocate arrays
+    const orbitRadii = new Float32Array(totalEvents);
+    const orbitSpeeds = new Float32Array(totalEvents);
+    const orbitPhases = new Float32Array(totalEvents);
+    const orbitTilts = new Float32Array(totalEvents);
+    const nodePositions = new Float32Array(totalEvents * 3);
+    const colors = new Float32Array(totalEvents * 3);
+    const eventIndices = new Float32Array(totalEvents);
+
+    // Color mapping for event types
+    const eventTypeColors: Record<string, THREE.Color> = {
+      birth: new THREE.Color(0.4, 0.9, 0.6),       // Green
+      death: new THREE.Color(0.6, 0.5, 0.8),       // Purple
+      marriage: new THREE.Color(1.0, 0.8, 0.4),   // Gold
+      occupation: new THREE.Color(0.4, 0.7, 1.0), // Blue
+      residence: new THREE.Color(0.6, 0.9, 0.9),  // Cyan
+      military_service: new THREE.Color(0.9, 0.5, 0.4), // Red-orange
+      graduation: new THREE.Color(0.9, 0.9, 0.5), // Yellow
+      other: new THREE.Color(0.8, 0.8, 0.8),      // White-ish
+    };
+
+    const defaultColor = new THREE.Color(0.7, 0.8, 0.9);
+
+    let index = 0;
+    for (const node of nodes) {
+      const events = node.events || [];
+      const eventCount = events.length;
+      if (eventCount === 0) continue;
+
+      // Base orbit radius depends on node size
+      const nodeScale = 1 + node.biographyWeight * this.config.visuals.nodeSizeMultiplier;
+      const baseRadius = this.config.visuals.nodeBaseSize * nodeScale + 4;
+
+      for (let i = 0; i < eventCount; i++) {
+        const event = events[i];
+
+        // Distribute events around different orbit radii and tilts
+        const radiusOffset = (i % 3) * 2; // 3 orbit "shells"
+        orbitRadii[index] = baseRadius + radiusOffset + Math.random() * 1.5;
+
+        // Slower orbit speeds, with variation
+        orbitSpeeds[index] = 0.3 + Math.random() * 0.4;
+
+        // Different starting phases
+        orbitPhases[index] = (i / eventCount) * Math.PI * 2 + Math.random() * 0.5;
+
+        // Varied tilts for 3D orbits
+        orbitTilts[index] = (Math.random() - 0.5) * Math.PI * 0.6;
+
+        // Node position
+        nodePositions[index * 3] = node.position.x;
+        nodePositions[index * 3 + 1] = node.position.y;
+        nodePositions[index * 3 + 2] = node.position.z;
+
+        // Color based on event type
+        const color = eventTypeColors[event.eventType] || defaultColor;
+        colors[index * 3] = color.r;
+        colors[index * 3 + 1] = color.g;
+        colors[index * 3 + 2] = color.b;
+
+        eventIndices[index] = index;
+
+        index++;
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    // Fireflies don't need actual position - it's computed in shader
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(totalEvents * 3), 3));
+    geometry.setAttribute('aOrbitRadius', new THREE.BufferAttribute(orbitRadii, 1));
+    geometry.setAttribute('aOrbitSpeed', new THREE.BufferAttribute(orbitSpeeds, 1));
+    geometry.setAttribute('aOrbitPhase', new THREE.BufferAttribute(orbitPhases, 1));
+    geometry.setAttribute('aOrbitTilt', new THREE.BufferAttribute(orbitTilts, 1));
+    geometry.setAttribute('aNodePosition', new THREE.BufferAttribute(nodePositions, 3));
+    geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('aEventIndex', new THREE.BufferAttribute(eventIndices, 1));
+
+    const material = new THREE.ShaderMaterial({
+      vertexShader: fireflyVertexShader,
+      fragmentShader: fireflyFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uSize: { value: 12 },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.fireflySystem = new THREE.Points(geometry, material);
+    this.scene.add(this.fireflySystem);
+
+    console.log(`Created ${totalEvents} event fireflies`);
+  }
+
+  /**
+   * Create golden edges connecting people who share the same events
+   * Shared events are detected by matching eventType + date + location
+   */
+  private createSharedEventEdges(nodes: GraphNode[]): void {
+    // Build event signature map: signature -> list of person IDs
+    const eventSignatureToPersons = new Map<string, Set<string>>();
+
+    for (const node of nodes) {
+      const events = node.events || [];
+      for (const event of events) {
+        // Create a unique signature for this event
+        // Events with same type, date, and location are considered shared
+        const signature = [
+          event.eventType || '',
+          event.eventDate || event.eventYear?.toString() || '',
+          event.location || '',
+          event.description || ''
+        ].join('|');
+
+        if (!eventSignatureToPersons.has(signature)) {
+          eventSignatureToPersons.set(signature, new Set());
+        }
+        eventSignatureToPersons.get(signature)!.add(node.id);
+      }
+    }
+
+    // Find events shared by multiple people
+    const sharedEvents: { personIds: string[], signature: string }[] = [];
+    for (const [signature, personIds] of eventSignatureToPersons) {
+      if (personIds.size > 1) {
+        sharedEvents.push({
+          personIds: Array.from(personIds),
+          signature
+        });
+      }
+    }
+
+    if (sharedEvents.length === 0) return;
+
+    // Create node map for quick lookup
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+    // Golden color for shared event edges
+    const goldColor = new THREE.Color(1.0, 0.8, 0.3);
+
+    // Create edges for each shared event
+    const edgePairs = new Set<string>(); // Track unique pairs to avoid duplicates
+
+    for (const sharedEvent of sharedEvents) {
+      const { personIds } = sharedEvent;
+
+      // Create edges between all pairs of people sharing this event
+      for (let i = 0; i < personIds.length; i++) {
+        for (let j = i + 1; j < personIds.length; j++) {
+          const pairKey = [personIds[i], personIds[j]].sort().join('-');
+          if (edgePairs.has(pairKey)) continue;
+          edgePairs.add(pairKey);
+
+          const nodeA = nodeMap.get(personIds[i]);
+          const nodeB = nodeMap.get(personIds[j]);
+
+          if (!nodeA || !nodeB) continue;
+
+          // Create curved golden edge
+          const start = new THREE.Vector3(
+            nodeA.position.x,
+            nodeA.position.y,
+            nodeA.position.z
+          );
+          const end = new THREE.Vector3(
+            nodeB.position.x,
+            nodeB.position.y,
+            nodeB.position.z
+          );
+
+          // Control point for curve - arc above the midpoint
+          const mid = new THREE.Vector3()
+            .addVectors(start, end)
+            .multiplyScalar(0.5);
+
+          // Arc upward and outward
+          const distance = start.distanceTo(end);
+          const arcHeight = Math.min(distance * 0.4, 30); // Cap the arc height
+          mid.y += arcHeight;
+
+          // Add some perpendicular offset for visual interest
+          const perpendicular = new THREE.Vector3()
+            .subVectors(end, start)
+            .cross(new THREE.Vector3(0, 1, 0))
+            .normalize()
+            .multiplyScalar(distance * 0.15);
+          mid.add(perpendicular);
+
+          const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+          const curvePoints = nodes.length > 200 ? 25 : 40;
+          const points = curve.getPoints(curvePoints);
+
+          const positions = new Float32Array(points.length * 3);
+          const progress = new Float32Array(points.length);
+
+          for (let k = 0; k < points.length; k++) {
+            positions[k * 3] = points[k].x;
+            positions[k * 3 + 1] = points[k].y;
+            positions[k * 3 + 2] = points[k].z;
+            progress[k] = k / (points.length - 1);
+          }
+
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute(
+            'position',
+            new THREE.BufferAttribute(positions, 3)
+          );
+          geometry.setAttribute(
+            'aProgress',
+            new THREE.BufferAttribute(progress, 1)
+          );
+
+          const material = new THREE.ShaderMaterial({
+            vertexShader: sharedEventEdgeVertexShader,
+            fragmentShader: sharedEventEdgeFragmentShader,
+            uniforms: {
+              uTime: { value: 0 },
+              uColorGold: { value: goldColor },
+            },
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          });
+
+          const line = new THREE.Line(geometry, material);
+          this.scene.add(line);
+          this.sharedEventEdges.push(line);
+        }
+      }
+    }
+
+    console.log(`Created ${this.sharedEventEdges.length} golden edges for shared events`);
+  }
+
+  /**
    * Set hover callback
    */
   onHover(callback: HoverCallback): void {
@@ -563,6 +837,18 @@ export class AncestralWebRenderer {
       if (this.backgroundParticles) {
         const material = this.backgroundParticles
           .material as THREE.ShaderMaterial;
+        material.uniforms.uTime.value = time;
+      }
+
+      // Update firefly system
+      if (this.fireflySystem) {
+        const material = this.fireflySystem.material as THREE.ShaderMaterial;
+        material.uniforms.uTime.value = time;
+      }
+
+      // Update shared event edges
+      for (const line of this.sharedEventEdges) {
+        const material = line.material as THREE.ShaderMaterial;
         material.uniforms.uTime.value = time;
       }
 

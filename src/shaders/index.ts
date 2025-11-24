@@ -367,3 +367,127 @@ void main() {
   gl_FragColor = vec4(finalColor, alpha);
 }
 `;
+
+// Firefly vertex shader - for events orbiting around person orbs
+export const fireflyVertexShader = `
+uniform float uTime;
+uniform float uSize;
+
+attribute float aOrbitRadius;
+attribute float aOrbitSpeed;
+attribute float aOrbitPhase;
+attribute float aOrbitTilt;
+attribute vec3 aNodePosition;
+attribute vec3 aColor;
+attribute float aEventIndex;
+
+varying vec3 vColor;
+varying float vPhase;
+
+void main() {
+  vColor = aColor;
+  vPhase = aOrbitPhase;
+
+  // Calculate orbital position around the node
+  float angle = uTime * aOrbitSpeed + aOrbitPhase;
+
+  // Create tilted orbit using rotation
+  float cosT = cos(aOrbitTilt);
+  float sinT = sin(aOrbitTilt);
+
+  float x = cos(angle) * aOrbitRadius;
+  float y = sin(angle) * aOrbitRadius * cosT;
+  float z = sin(angle) * aOrbitRadius * sinT;
+
+  // Add some wobble
+  float wobble = sin(uTime * 2.0 + aOrbitPhase * 3.0) * 0.3;
+  y += wobble;
+
+  vec3 pos = aNodePosition + vec3(x, y, z);
+
+  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+
+  // Size attenuation
+  float sizeAtten = 200.0 / -mvPosition.z;
+  gl_PointSize = uSize * sizeAtten * (0.8 + sin(uTime * 4.0 + aOrbitPhase * 6.28) * 0.2);
+
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+export const fireflyFragmentShader = `
+uniform float uTime;
+
+varying vec3 vColor;
+varying float vPhase;
+
+void main() {
+  vec2 center = gl_PointCoord - vec2(0.5);
+  float dist = length(center);
+
+  if (dist > 0.5) discard;
+
+  // Soft glow with bright center
+  float glow = 1.0 - smoothstep(0.0, 0.5, dist);
+  glow = pow(glow, 2.0);
+
+  // Flickering effect like a firefly
+  float flicker = sin(uTime * 8.0 + vPhase * 12.56) * 0.5 + 0.5;
+  flicker = smoothstep(0.3, 0.7, flicker);
+
+  // Occasional bright flash
+  float flash = pow(sin(uTime * 2.0 + vPhase * 6.28) * 0.5 + 0.5, 6.0);
+
+  float intensity = glow * (0.4 + flicker * 0.4 + flash * 0.4);
+
+  vec3 finalColor = vColor * intensity * 2.5;
+  float alpha = intensity * 0.9;
+
+  gl_FragColor = vec4(finalColor, alpha);
+}
+`;
+
+// Golden edge shader for shared events - connects fireflies between people
+export const sharedEventEdgeVertexShader = `
+attribute float aProgress;
+
+varying float vProgress;
+varying vec3 vWorldPosition;
+
+void main() {
+  vProgress = aProgress;
+
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPos.xyz;
+
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`;
+
+export const sharedEventEdgeFragmentShader = `
+uniform float uTime;
+uniform vec3 uColorGold;
+
+varying float vProgress;
+varying vec3 vWorldPosition;
+
+void main() {
+  // Flowing golden energy
+  float flow = fract(vProgress * 2.0 - uTime * 0.8);
+  float flowPulse = smoothstep(0.0, 0.4, flow) * smoothstep(1.0, 0.6, flow);
+
+  // Fade at ends
+  float endFade = smoothstep(0.0, 0.15, vProgress) * smoothstep(1.0, 0.85, vProgress);
+
+  // Golden shimmer
+  float shimmer = sin(uTime * 6.0 + vProgress * 20.0) * 0.3 + 0.7;
+
+  float energy = flowPulse * shimmer;
+
+  vec3 color = uColorGold * (0.6 + energy * 0.8);
+
+  float alpha = endFade * (0.3 + flowPulse * 0.5);
+
+  gl_FragColor = vec4(color * 1.8, alpha);
+}
+`;
