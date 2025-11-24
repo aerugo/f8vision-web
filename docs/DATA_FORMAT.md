@@ -1,6 +1,10 @@
 # Genealogy Data Format Specification
 
-This document describes the data format expected for genealogy files that can be imported into f8vision-web. The application accepts **YAML files** containing family data with people and their relationships.
+This document describes the data formats expected for genealogy files that can be imported into f8vision-web. The application accepts **YAML** or **JSON files** containing family data with people and their relationships.
+
+Two formats are supported:
+1. **Standard YAML Format** - Simple format with people and inline relationships
+2. **Ancestral-Synth JSON Format** - Rich format with events, notes, and separate relationship links
 
 ## Table of Contents
 
@@ -18,6 +22,14 @@ This document describes the data format expected for genealogy files that can be
 - [Examples](#examples)
   - [Minimal Example](#minimal-example)
   - [Complete Example](#complete-example)
+- [Ancestral-Synth JSON Format](#ancestral-synth-json-format)
+  - [Format Overview](#format-overview)
+  - [Persons Array](#persons-array)
+  - [Events Array](#events-array)
+  - [Notes Array](#notes-array)
+  - [Relationship Links](#relationship-links)
+  - [Visual Features](#visual-features)
+  - [Ancestral-Synth Example](#ancestral-synth-example)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
 
@@ -394,6 +406,291 @@ This example includes:
 
 ---
 
+## Ancestral-Synth JSON Format
+
+The **ancestral-synth** format is a rich JSON format that supports events, notes, and separate relationship links. This format is automatically detected when the file contains a `persons` array (instead of `people`) or has `metadata.format` set to `"ancestral-synth-json"`.
+
+### Format Overview
+
+```json
+{
+  "metadata": {
+    "format": "ancestral-synth-json",
+    "version": "1.0",
+    "exported_at": "2024-01-15T10:30:00Z",
+    "title": "Family Genealogy",
+    "truncated": 100
+  },
+  "persons": [...],
+  "events": [...],
+  "notes": [...],
+  "child_links": [...],
+  "spouse_links": [...]
+}
+```
+
+### Persons Array
+
+Each person object in the `persons` array:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | **Yes** | Unique identifier |
+| `given_name` | string | No | First/given name |
+| `surname` | string | No | Family name |
+| `name` | string | No | Full name (fallback if given_name/surname not provided) |
+| `nickname` | string | No | Nickname or alias |
+| `maiden_name` | string | No | Maiden name (pre-marriage surname) |
+| `gender` | string | No | `"male"` or `"female"` |
+| `birth_date` | string | No | Birth date (ISO 8601 or flexible format) |
+| `birth_place` | string | No | Place of birth |
+| `death_date` | string | No | Death date |
+| `death_place` | string | No | Place of death |
+| `biography` | string | No | Biographical text |
+| `status` | string | No | `"complete"`, `"pending"`, or `"queued"` |
+| `generation` | number | No | Generation number (0 = center person) |
+
+**Example:**
+
+```json
+{
+  "id": "p_12345",
+  "given_name": "John",
+  "surname": "Smith",
+  "nickname": "Johnny",
+  "maiden_name": null,
+  "gender": "male",
+  "birth_date": "1950-03-15",
+  "birth_place": "New York, NY",
+  "death_date": "2020-11-22",
+  "death_place": "Los Angeles, CA",
+  "biography": "John was a renowned architect...",
+  "status": "complete",
+  "generation": 0
+}
+```
+
+### Events Array
+
+Events represent life events associated with people. Events are visualized as **firefly particles** that orbit around each person's node in the 3D visualization.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | **Yes** | Unique event identifier |
+| `event_type` | string | **Yes** | Type of event (see below) |
+| `event_date` | string | No | Full date of event |
+| `event_year` | number | No | Year of event (if full date unknown) |
+| `location` | string | No | Where the event occurred |
+| `description` | string | No | Additional details |
+| `primary_person_id` | string | **Yes** | ID of the person this event belongs to |
+
+**Common Event Types:**
+
+| Event Type | Firefly Color | Description |
+|------------|---------------|-------------|
+| `birth` | Green | Birth event |
+| `death` | Purple | Death event |
+| `marriage` | Gold | Marriage event |
+| `occupation` | Blue | Career/job event |
+| `residence` | Cyan | Where person lived |
+| `military_service` | Red-orange | Military service |
+| `graduation` | Yellow | Educational milestone |
+| Other | White | Any other event type |
+
+**Example:**
+
+```json
+{
+  "id": "evt_001",
+  "event_type": "marriage",
+  "event_date": "1975-06-15",
+  "location": "St. Mary's Church, Boston",
+  "description": "Married Jane Doe",
+  "primary_person_id": "p_12345"
+}
+```
+
+### Notes Array
+
+Notes are additional information or research notes about a person.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | **Yes** | Unique note identifier |
+| `person_id` | string | **Yes** | ID of the person this note belongs to |
+| `category` | string | No | Category (e.g., "research", "family_story") |
+| `content` | string | **Yes** | The note text |
+| `source` | string | No | Source of the information |
+
+**Example:**
+
+```json
+{
+  "id": "note_001",
+  "person_id": "p_12345",
+  "category": "family_story",
+  "content": "According to Aunt Mary, John once rescued a cat from a tree during a thunderstorm.",
+  "source": "Interview with Mary Smith, 2019"
+}
+```
+
+### Relationship Links
+
+Relationships are defined separately from persons using link arrays. This allows for cleaner data modeling and easier updates.
+
+#### Child Links
+
+```json
+{
+  "child_links": [
+    { "parent_id": "p_001", "child_id": "p_002" },
+    { "parent_id": "p_001", "child_id": "p_003" }
+  ]
+}
+```
+
+Each link connects one parent to one child. A child with two parents needs two separate links.
+
+#### Spouse Links
+
+```json
+{
+  "spouse_links": [
+    { "person1_id": "p_001", "person2_id": "p_004" }
+  ]
+}
+```
+
+Spouse links are bidirectional - you only need to specify each relationship once.
+
+### Visual Features
+
+The ancestral-synth format enables special visual features:
+
+#### Event Fireflies
+
+- Each event becomes a **glowing particle** that orbits the person's node
+- More events = more fireflies circling the person
+- Colors indicate event type (see Event Types table above)
+- Fireflies have a flickering, organic animation
+
+#### Shared Event Edges
+
+When two people share the **same event** (matching event_type + date + location + description):
+- A **golden curved edge** connects their nodes
+- The edge has a flowing energy animation
+- In the info panel, shared events show links to the other person(s)
+
+This is useful for visualizing:
+- Marriage events (connecting spouses)
+- Shared residences
+- Family gatherings
+- Witnessed events
+
+### Ancestral-Synth Example
+
+```json
+{
+  "metadata": {
+    "format": "ancestral-synth-json",
+    "version": "1.0",
+    "exported_at": "2024-01-15T10:30:00Z",
+    "title": "Smith Family Genealogy"
+  },
+  "persons": [
+    {
+      "id": "p_001",
+      "given_name": "John",
+      "surname": "Smith",
+      "gender": "male",
+      "birth_date": "1950-03-15",
+      "birth_place": "Boston, MA",
+      "biography": "John was a software engineer who pioneered early computing.",
+      "status": "complete",
+      "generation": -1
+    },
+    {
+      "id": "p_002",
+      "given_name": "Jane",
+      "surname": "Smith",
+      "maiden_name": "Doe",
+      "gender": "female",
+      "birth_date": "1952-07-22",
+      "birth_place": "Cambridge, MA",
+      "status": "complete",
+      "generation": -1
+    },
+    {
+      "id": "p_003",
+      "given_name": "Michael",
+      "surname": "Smith",
+      "nickname": "Mike",
+      "gender": "male",
+      "birth_date": "1980-01-10",
+      "birth_place": "Seattle, WA",
+      "biography": "Michael is a data scientist and genealogy enthusiast.",
+      "status": "complete",
+      "generation": 0
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_001",
+      "event_type": "birth",
+      "event_date": "1950-03-15",
+      "location": "Boston, MA",
+      "primary_person_id": "p_001"
+    },
+    {
+      "id": "evt_002",
+      "event_type": "marriage",
+      "event_date": "1975-06-15",
+      "location": "St. Mary's Church, Boston",
+      "description": "Wedding ceremony",
+      "primary_person_id": "p_001"
+    },
+    {
+      "id": "evt_003",
+      "event_type": "marriage",
+      "event_date": "1975-06-15",
+      "location": "St. Mary's Church, Boston",
+      "description": "Wedding ceremony",
+      "primary_person_id": "p_002"
+    },
+    {
+      "id": "evt_004",
+      "event_type": "birth",
+      "event_date": "1980-01-10",
+      "location": "Seattle, WA",
+      "primary_person_id": "p_003"
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_001",
+      "person_id": "p_001",
+      "category": "career",
+      "content": "John worked at IBM from 1972-1995 before starting his own consulting firm.",
+      "source": "Family records"
+    }
+  ],
+  "child_links": [
+    { "parent_id": "p_001", "child_id": "p_003" },
+    { "parent_id": "p_002", "child_id": "p_003" }
+  ],
+  "spouse_links": [
+    { "person1_id": "p_001", "person2_id": "p_002" }
+  ]
+}
+```
+
+In this example:
+- John and Jane's marriage events (`evt_002` and `evt_003`) have matching details, so a **golden edge** will connect their nodes
+- Michael will have one firefly (his birth event), while John and Jane will each have two fireflies
+- The info panel for John will show his career note
+
+---
+
 ## Best Practices
 
 ### ID Naming Conventions
@@ -556,11 +853,38 @@ interface Person {
   name: string;
   birthDate?: string;
   deathDate?: string;
+  birthPlace?: string;
+  deathPlace?: string;
   biography?: string;
+  nickname?: string;
+  maidenName?: string;
+  gender?: 'male' | 'female' | 'other';
+  status?: 'complete' | 'pending' | 'queued';
   parentIds?: string[];
   spouseIds?: string[];
   childIds?: string[];
+  eventIds?: string[];
+  noteIds?: string[];
   generation?: number;  // Computed at runtime
+}
+
+interface GenealogyEvent {
+  id: string;
+  eventType: string;
+  eventDate?: string;
+  eventYear?: number;
+  location?: string;
+  description?: string;
+  primaryPersonId: string;
+  sharedWithPersonIds?: string[];  // Computed: people who share this event
+}
+
+interface PersonNote {
+  id: string;
+  personId: string;
+  category?: string;
+  content: string;
+  source?: string;
 }
 
 interface FamilyData {
@@ -568,8 +892,14 @@ interface FamilyData {
     title?: string;
     centeredPersonId?: string;
     description?: string;
+    exportedAt?: string;
+    version?: string;
+    format?: string;
+    truncated?: number;
   };
   people: Person[];
+  events?: GenealogyEvent[];
+  notes?: PersonNote[];
 }
 ```
 
